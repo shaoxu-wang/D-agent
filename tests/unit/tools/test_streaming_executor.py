@@ -30,6 +30,28 @@ class SlowTool(Tool):
         return True  # P1a: enable parallel execution for this test tool
 
 
+class FakePermissionRecord:
+    allowed = True
+    decision = "allow"
+
+
+class RecordingPermissionChecker:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def check_with_record(self, tool_name: str, tool_input: dict[str, Any], *, tool_call_id: str):
+        self.calls.append((tool_call_id, tool_name, tool_input))
+        return FakePermissionRecord()
+
+
+class RecordingObserver:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def observe(self, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
+
+
 class TestStreamingToolExecutor:
     async def test_tools_start_immediately(self) -> None:
         """tool_1 starts executing while tool_2 hasn't been added yet."""
@@ -87,3 +109,23 @@ class TestStreamingToolExecutor:
 
         executor.add_tool(ToolUseBlock(id="t1", name="slow", input={}))
         assert executor.has_pending
+
+    async def test_observer_receives_permission_record_after_execution(self) -> None:
+        reg = ToolRegistry()
+        reg.register(SlowTool(delay=0))
+        checker = RecordingPermissionChecker()
+        observer = RecordingObserver()
+        executor = StreamingToolExecutor(
+            reg,
+            permission_checker=checker,
+            result_observers=[observer],
+        )
+
+        executor.add_tool(ToolUseBlock(id="toolu_1", name="slow", input={"value": 1}))
+        results = await executor.get_results()
+
+        assert results[0][1].content == "done after 0s"
+        assert checker.calls == [("toolu_1", "slow", {"value": 1})]
+        assert observer.calls[0]["tool_call_id"] == "toolu_1"
+        assert observer.calls[0]["permission_record"].decision == "allow"
+        assert observer.calls[0]["duration_ms"] >= 0

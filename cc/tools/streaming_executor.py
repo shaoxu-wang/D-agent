@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from .base import ToolRegistry, ToolResult
@@ -56,12 +57,14 @@ class StreamingToolExecutor:
         registry: ToolRegistry,
         hooks: list[HookConfig] | None = None,
         permission_checker: Callable[..., Any] | None = None,
+        result_observers: list[Any] | None = None,
     ) -> None:
         self._registry = registry
         self._hooks = hooks
         # permission_checker 是 P2a 阶段的权限检查接口预留，
         # 用于在执行工具前检查用户是否授权。目前可以为 None。
         self._permission_checker = permission_checker
+        self._result_observers = result_observers or []
         # _pending 记录所有已启动的 (tool_use_id, asyncio.Task) 对，
         # 用于在 get_results() 中收集结果
         self._pending: list[tuple[str, asyncio.Task[ToolResult]]] = []
@@ -124,18 +127,39 @@ class StreamingToolExecutor:
             # Permission check (P2a interface)
             # 权限检查：在 ACCEPT_EDITS 等非全自动模式下，
             # 某些危险操作（如删除文件）需要用户确认。
+            permission_record = None
             if self._permission_checker is not None:
-                allowed = await self._permission_checker(block.name, block.input)
+                if hasattr(self._permission_checker, "check_with_record"):
+                    permission_record = await self._permission_checker.check_with_record(
+                        block.name,
+                        block.input,
+                        tool_call_id=block.id,
+                    )
+                    allowed = permission_record.allowed
+                else:
+                    allowed = await self._permission_checker(block.name, block.input)
                 if not allowed:
                     return ToolResult(content="Denied by permission policy", is_error=True)
 
             # Execute
             # 与 orchestration.py 一致：异常转为错误 ToolResult，不中断循环
+            started = time.perf_counter()
             try:
                 result = await tool.execute(block.input)
             except Exception as e:
                 logger.warning("Tool %s failed: %s", block.name, e)
                 result = ToolResult(content=f"Error: {e}", is_error=True)
+            duration_ms = int((time.perf_counter() - started) * 1000)
+
+            for observer in self._result_observers:
+                observer.observe(
+                    tool_call_id=block.id,
+                    tool_name=block.name,
+                    tool_input=block.input,
+                    result=result,
+                    permission_record=permission_record,
+                    duration_ms=duration_ms,
+                )
 
             # PostToolUse hooks —— 工具完成后触发，用于审计日志、通知等
             if self._hooks:
