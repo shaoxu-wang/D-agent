@@ -13,3 +13,4 @@ build/
 .helloagents/sessions/
 dsim_ai_mcp/.git.backup/
 dsim_ai_mcp/.helloagents/sessions/
+.dsim_agent/
