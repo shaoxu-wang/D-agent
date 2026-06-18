@@ -31,6 +31,19 @@ logger = logging.getLogger(__name__)
 # 工具名称常量，API 层面的唯一标识
 AGENT_TOOL_NAME = "Agent"
 
+DSIM_AGENT_TOOL_NAMES = {
+    "SaveProjectContext",
+    "GenerateDsimReport",
+    "DiagnoseSimulationFailure",
+    "CompareSimulationRuns",
+    "RunParameterSweep",
+}
+
+
+def should_exclude_from_subagent(tool_name: str) -> bool:
+    """Return whether a tool must stay unavailable to sub-agents."""
+    return tool_name.startswith("mcp__dsim__") or tool_name in DSIM_AGENT_TOOL_NAMES
+
 
 class AgentTool(Tool):
     """Spawn a sub-agent to handle complex tasks.
@@ -172,6 +185,8 @@ class AgentTool(Tool):
         interactive_tools = {"AskUserQuestion"} if run_in_bg else set()
         for tool in self._parent_registry.list_tools():
             if tool.get_name() == AGENT_TOOL_NAME:
+                continue
+            if should_exclude_from_subagent(tool.get_name()):
                 continue
             if tool.get_name() in interactive_tools:
                 continue
