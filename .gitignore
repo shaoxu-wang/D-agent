@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tmp/
+.DS_Store
+.helloagents/sessions/
+dsim_ai_mcp/.git.backup/
+dsim_ai_mcp/.helloagents/sessions/
