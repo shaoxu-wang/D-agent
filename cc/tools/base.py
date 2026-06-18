@@ -51,6 +51,7 @@ class ToolResult:
     # is_error=True 的 ToolResult，这样 query_loop 不会中断，模型可以看到
     # 错误信息并决定如何处理（重试、换参数、或向用户解释）。
     is_error: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def text(self) -> str:

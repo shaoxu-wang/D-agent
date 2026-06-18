@@ -12,6 +12,7 @@ Corresponds to TS: services/mcp/client.ts.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -59,8 +60,8 @@ class McpToolProxy(Tool):
         )
 
     def is_concurrency_safe(self, tool_input: dict[str, Any]) -> bool:
-        # 假设 MCP 工具是并发安全的，因为每次调用都是独立的 RPC 请求
-        # 远程服务器自行处理并发控制
+        if self._server_name == "dsim":
+            return False
         return True  # MCP tools are assumed safe
 
     async def execute(self, tool_input: dict[str, Any]) -> ToolResult:
@@ -100,9 +101,26 @@ class McpToolProxy(Tool):
 
             # 如果包含非文本内容（如图片），返回结构化的 rich content
             # 否则将所有文本拼接为纯字符串返回，减少不必要的复杂度
+            metadata: dict[str, Any] = {
+                "mcp": {"server_name": self._server_name, "tool_name": self._tool_name},
+            }
             if any(b.get("type") != "text" for b in rich_blocks):
-                return ToolResult(content=rich_blocks)
-            return ToolResult(content="\n".join(text_parts) if text_parts else "(no output)")
+                return ToolResult(content=rich_blocks, metadata=metadata)
+
+            text = "\n".join(text_parts) if text_parts else "(no output)"
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict) and parsed.get("service") == "dsim":
+                metadata["structured"] = parsed
+                preview = f"DSim {parsed.get('tool', self._tool_name)} returned ok={parsed.get('ok')}"
+                return ToolResult(
+                    content=preview,
+                    is_error=not bool(parsed.get("ok", True)),
+                    metadata=metadata,
+                )
+            return ToolResult(content=text, metadata=metadata)
 
         except Exception as e:
             # MCP 工具调用失败时返回错误结果（而非抛异常），确保不中断 query_loop
