@@ -197,11 +197,14 @@ async def _connect_mcp_servers(cwd: str, registry: ToolRegistry) -> None:
     """
     from cc.mcp.client import connect_mcp_server
     from cc.mcp.config import load_mcp_configs
+    from cc.dsim.registry import register_dsim_tools
 
     configs = load_mcp_configs(cwd)
     for config in configs:
         logger.info("Connecting MCP server: %s", config.name)
         await connect_mcp_server(config, registry)
+
+    register_dsim_tools(registry)
 
 
 def _load_env() -> dict[str, str]:
