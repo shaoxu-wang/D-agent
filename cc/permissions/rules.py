@@ -85,7 +85,7 @@ def _matches_rule(rule: str, tool_name: str, tool_input: dict[str, object] | Non
     """Check if a single rule matches the tool invocation.
 
     规则语法支持两种形式：
-    - "ToolName" —— 精确匹配工具名，如 "Edit" 匹配所有 Edit 调用
+    - "ToolName" —— glob 匹配工具名，如 "mcp__dsim__Get*" 匹配 DSim 查询工具
     - "Bash:pattern" —— 匹配工具名 "Bash" 且 command 参数符合 glob 模式
       例如 "Bash:git*" 匹配 git status、git commit 等所有 git 命令
 
@@ -103,8 +103,8 @@ def _matches_rule(rule: str, tool_name: str, tool_input: dict[str, object] | Non
         command = str(tool_input.get("command", ""))
         return fnmatch(command, rule_pattern)
 
-    # 简单规则：工具名精确匹配
-    return tool_name == rule
+    # 简单规则：工具名 glob 匹配
+    return fnmatch(tool_name, rule)
 
 
 def apply_rules(

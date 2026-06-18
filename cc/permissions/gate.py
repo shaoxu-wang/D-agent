@@ -16,7 +16,13 @@ Key design:
 
 from __future__ import annotations
 
+import hashlib
+import inspect
+import json
 import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -58,7 +64,27 @@ class PermissionDecision(Enum):
     """
     ALLOW = "allow"
     ASK = "ask"
+    STRONG_ASK = "strong_ask"
     DENY = "deny"
+
+
+@dataclass(frozen=True)
+class PermissionDecisionRecord:
+    """Auditable permission decision for a single tool call."""
+
+    tool_call_id: str
+    tool_name: str
+    decision: str
+    source: str
+    allowed: bool
+    input_hash: str
+    input_summary: str
+    prompt_shown: bool = False
+    always_allowed: bool = False
+    created_at: str = ""
+
+
+PromptCallback = Callable[[str, dict[str, object]], Awaitable[str] | str]
 
 
 def check_permission(
@@ -112,10 +138,12 @@ class PermissionContext:
         mode: PermissionMode = PermissionMode.ACCEPT_EDITS,
         is_interactive: bool = True,
         rules: PermissionRules | None = None,
+        prompt_callback: PromptCallback | None = None,
     ) -> None:
         self.mode = mode
         self.is_interactive = is_interactive
         self.rules = rules
+        self.prompt_callback = prompt_callback
         # 存储用户选择"always allow"的工具名，避免每次都弹窗确认
         self._always_allow: set[str] = set()
 
@@ -136,40 +164,174 @@ class PermissionContext:
            - 非交互模式 → 直接拒绝（fail-fast）
            - 交互模式 → 弹窗询问用户
         """
-        # 已被用户标记为"始终允许"的工具，跳过所有检查
-        if tool_name in self._always_allow:
-            return True
+        record = await self.check_with_record(tool_name, tool_input)
+        return record.allowed
 
-        # P2b: 自定义规则优先于模式检查，允许用户通过 settings.json 精细控制
+    async def check_with_record(
+        self,
+        tool_name: str,
+        tool_input: dict[str, object],
+        *,
+        tool_call_id: str = "",
+    ) -> PermissionDecisionRecord:
+        """Check permission and return an auditable decision record."""
+        input_hash = _hash_tool_input(tool_input)
+        input_summary = _summarize_tool_input(tool_input)
+        dsim_risk = _classify_dsim_risk(tool_name, tool_input)
+
+        # P2b: 自定义规则优先于模式检查，deny 规则仍保持最高优先级。
+        rules_decision: PermissionDecision | None = None
         if self.rules is not None:
             from cc.permissions.rules import apply_rules
 
             rules_decision = apply_rules(self.rules, tool_name, tool_input)
-            if rules_decision is not None:
-                # 规则明确匹配，直接按规则决定（不再走模式检查）
-                if rules_decision == PermissionDecision.DENY:
-                    return False
-                if rules_decision == PermissionDecision.ALLOW:
-                    return True
+            if rules_decision == PermissionDecision.DENY:
+                return _decision_record(
+                    tool_call_id,
+                    tool_name,
+                    "deny",
+                    "config_deny",
+                    False,
+                    input_hash,
+                    input_summary,
+                )
+
+        if dsim_risk == PermissionDecision.STRONG_ASK:
+            return await self._prompt_and_record(
+                tool_call_id,
+                tool_name,
+                tool_input,
+                PermissionDecision.STRONG_ASK,
+                "dsim_risk",
+                input_hash,
+                input_summary,
+                allow_always=False,
+            )
+
+        # 已被用户标记为"始终允许"的工具，跳过普通 ASK，但不会绕过 strong_ask。
+        if tool_name in self._always_allow:
+            return _decision_record(
+                tool_call_id,
+                tool_name,
+                "allow",
+                "always_allow",
+                True,
+                input_hash,
+                input_summary,
+                always_allowed=True,
+            )
+
+        if rules_decision == PermissionDecision.ALLOW:
+            return _decision_record(
+                tool_call_id,
+                tool_name,
+                "allow",
+                "config_allow",
+                True,
+                input_hash,
+                input_summary,
+            )
+
+        if dsim_risk == PermissionDecision.ALLOW:
+            return _decision_record(
+                tool_call_id,
+                tool_name,
+                "allow",
+                "dsim_risk",
+                True,
+                input_hash,
+                input_summary,
+            )
+
+        if dsim_risk == PermissionDecision.ASK:
+            return await self._prompt_and_record(
+                tool_call_id,
+                tool_name,
+                tool_input,
+                PermissionDecision.ASK,
+                "dsim_risk",
+                input_hash,
+                input_summary,
+                allow_always=True,
+            )
 
         # 模式检查：根据 PermissionMode 和工具白名单判定
         decision = check_permission(self.mode, tool_name, tool_input)
 
         if decision == PermissionDecision.ALLOW:
-            return True
+            return _decision_record(
+                tool_call_id,
+                tool_name,
+                "allow",
+                "permission_mode",
+                True,
+                input_hash,
+                input_summary,
+            )
 
         if decision == PermissionDecision.ASK:
-            if not self.is_interactive:
-                # 非交互模式（如 --print、后台 agent）无法询问用户，直接拒绝
-                # 这是安全设计：宁可拒绝也不能在无人监督时自动执行高危操作
-                logger.info("Permission denied (non-interactive): %s", tool_name)
-                return False
-
-            # 交互模式：向用户展示工具信息并等待确认
-            return await self._prompt_user(tool_name, tool_input)
+            return await self._prompt_and_record(
+                tool_call_id,
+                tool_name,
+                tool_input,
+                PermissionDecision.ASK,
+                "permission_mode",
+                input_hash,
+                input_summary,
+                allow_always=True,
+            )
 
         # DENY 决定：直接拒绝
-        return False
+        return _decision_record(
+            tool_call_id,
+            tool_name,
+            "deny",
+            "permission_mode",
+            False,
+            input_hash,
+            input_summary,
+        )
+
+    async def _prompt_and_record(
+        self,
+        tool_call_id: str,
+        tool_name: str,
+        tool_input: dict[str, object],
+        decision: PermissionDecision,
+        source: str,
+        input_hash: str,
+        input_summary: str,
+        *,
+        allow_always: bool,
+    ) -> PermissionDecisionRecord:
+        if not self.is_interactive:
+            logger.info("Permission denied (non-interactive): %s", tool_name)
+            return _decision_record(
+                tool_call_id,
+                tool_name,
+                decision.value,
+                source,
+                False,
+                input_hash,
+                input_summary,
+            )
+
+        allowed, always_allowed = await self._prompt_user_decision(
+            tool_name,
+            tool_input,
+            allow_always=allow_always,
+        )
+        return _decision_record(
+            tool_call_id,
+            tool_name,
+            decision.value,
+            source,
+            allowed,
+            input_hash,
+            input_summary,
+            prompt_shown=True,
+            always_allowed=always_allowed,
+        )
 
     async def _prompt_user(
         self,
@@ -183,26 +345,104 @@ class PermissionContext:
         - n/no: 本次拒绝
         - a/always: 本次允许，且记住该工具后续自动允许（存入 _always_allow）
         """
-        from cc.ui.renderer import console
+        allowed, _always_allowed = await self._prompt_user_decision(tool_name, tool_input)
+        return allowed
 
-        # 截断过长的输入预览，避免刷屏
-        from cc.ui.renderer import _shorten_paths
+    async def _prompt_user_decision(
+        self,
+        tool_name: str,
+        tool_input: dict[str, object],
+        *,
+        allow_always: bool = True,
+    ) -> tuple[bool, bool]:
+        """Prompt the user and return (allowed, stored_as_always_allowed)."""
+        if self.prompt_callback is not None:
+            response = self.prompt_callback(tool_name, tool_input)
+            if inspect.isawaitable(response):
+                response = await response
+            response_text = str(response).strip().lower()
+        else:
+            from cc.ui.renderer import console
 
-        input_preview = _shorten_paths(str(tool_input))
-        if len(input_preview) > 200:
-            input_preview = input_preview[:200] + "..."
+            # 截断过长的输入预览，避免刷屏
+            from cc.ui.renderer import _shorten_paths
 
-        console.print(f"\n[yellow]Permission required: {tool_name}[/]")
-        console.print(f"[dim]{input_preview}[/]")
+            input_preview = _shorten_paths(str(tool_input))
+            if len(input_preview) > 200:
+                input_preview = input_preview[:200] + "..."
 
-        try:
-            response = console.input("[bold]Allow? (y/n/a=always): [/]").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            # 用户中断输入时视为拒绝
-            return False
+            console.print(f"\n[yellow]Permission required: {tool_name}[/]")
+            console.print(f"[dim]{input_preview}[/]")
 
-        if response in ("a", "always"):
+            try:
+                response_text = console.input("[bold]Allow? (y/n/a=always): [/]").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                # 用户中断输入时视为拒绝
+                return False, False
+
+        if response_text in ("a", "always"):
             # 记住选择，后续同类工具调用不再弹窗
-            self._always_allow.add(tool_name)
-            return True
-        return response in ("y", "yes")
+            if allow_always:
+                self._always_allow.add(tool_name)
+                return True, True
+            return True, False
+        return response_text in ("y", "yes"), False
+
+
+def _classify_dsim_risk(
+    tool_name: str,
+    tool_input: dict[str, object],
+) -> PermissionDecision | None:
+    from cc.dsim.permissions import DsimRiskClassifier
+
+    classifier = DsimRiskClassifier()
+    if not classifier.is_dsim_tool(tool_name):
+        return None
+
+    risk = classifier.classify(tool_name, tool_input)
+    if risk == "strong_ask":
+        return PermissionDecision.STRONG_ASK
+    if risk == "ask":
+        return PermissionDecision.ASK
+    return PermissionDecision.ALLOW
+
+
+def _hash_tool_input(tool_input: dict[str, object]) -> str:
+    try:
+        payload = json.dumps(tool_input, ensure_ascii=False, sort_keys=True, default=str)
+    except TypeError:
+        payload = str(tool_input)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _summarize_tool_input(tool_input: dict[str, object]) -> str:
+    summary = ", ".join(f"{key}={value!r}" for key, value in sorted(tool_input.items()))
+    if len(summary) > 200:
+        return summary[:200] + "..."
+    return summary
+
+
+def _decision_record(
+    tool_call_id: str,
+    tool_name: str,
+    decision: str,
+    source: str,
+    allowed: bool,
+    input_hash: str,
+    input_summary: str,
+    *,
+    prompt_shown: bool = False,
+    always_allowed: bool = False,
+) -> PermissionDecisionRecord:
+    return PermissionDecisionRecord(
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
+        decision=decision,
+        source=source,
+        allowed=allowed,
+        input_hash=input_hash,
+        input_summary=input_summary,
+        prompt_shown=prompt_shown,
+        always_allowed=always_allowed,
+        created_at=datetime.now(UTC).isoformat(),
+    )
