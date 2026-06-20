@@ -362,10 +362,8 @@ class PermissionContext:
                 response = await response
             response_text = str(response).strip().lower()
         else:
-            from cc.ui.renderer import console
-
             # 截断过长的输入预览，避免刷屏
-            from cc.ui.renderer import _shorten_paths
+            from cc.ui.renderer import _shorten_paths, console
 
             input_preview = _shorten_paths(str(tool_input))
             if len(input_preview) > 200:

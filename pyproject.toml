@@ -61,9 +61,14 @@ select = [
     "TCH",
     "RUF",
 ]
+ignore = [
+    "RUF002",
+    "RUF003",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Prompt text files contain long lines copied verbatim from TS source
+"cc/main.py" = ["I001"]
 "cc/prompts/sections.py" = ["E501"]
 "cc/prompts/coordinator_prompt.py" = ["E501"]
 "cc/prompts/teammate_prompt.py" = ["E501"]
@@ -87,5 +92,7 @@ python_version = "3.12"
 module = [
     "aiofiles",
     "markdownify",
+    "mcp",
+    "mcp.client.stdio",
 ]
 ignore_missing_imports = true

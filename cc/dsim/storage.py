@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def read_json_file(path: Path) -> dict[str, Any]:
     """Read a JSON object from disk."""
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected JSON object in {path}")
+    return data
 
 
 def write_json_file_atomic(path: Path, data: dict[str, Any]) -> None:

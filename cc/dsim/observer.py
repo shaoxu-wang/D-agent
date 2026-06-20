@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc.dsim.result_adapter import DsimResultAdapter
-from cc.tools.base import ToolResult
+
+if TYPE_CHECKING:
+    from cc.tools.base import ToolResult
 
 
 class DsimToolResultObserver:

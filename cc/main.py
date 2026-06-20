@@ -195,9 +195,9 @@ async def _connect_mcp_servers(cwd: str, registry: ToolRegistry) -> None:
     每个 MCP server 连接后，其工具会被动态注册到 registry 中，
     从此与内置工具一视同仁地参与 query_loop 的工具调用流程。
     """
+    from cc.dsim.registry import register_dsim_tools
     from cc.mcp.client import connect_mcp_server
     from cc.mcp.config import load_mcp_configs
-    from cc.dsim.registry import register_dsim_tools
 
     configs = load_mcp_configs(cwd)
     for config in configs:
@@ -731,10 +731,10 @@ async def _run_repl(model: str, resume_id: str | None = None) -> None:
                     if not ds_key:
                         console.print("[red]Error: DASHSCOPE_API_KEY not set. Add it to .env or environment.[/]")
                         continue
-                    engine._client = create_client(api_key=ds_key, base_url=DASHSCOPE_BASE_URL)  # type: ignore[assignment]
+                    engine._client = create_client(api_key=ds_key, base_url=DASHSCOPE_BASE_URL)
                 else:
                     # 切回 Claude 原生
-                    engine._client = create_client(  # type: ignore[assignment]
+                    engine._client = create_client(
                         api_key=env.get("ANTHROPIC_API_KEY"),
                         base_url=env.get("ANTHROPIC_BASE_URL"),
                     )

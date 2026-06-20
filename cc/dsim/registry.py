@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from cc.tools.base import ToolRegistry
+from typing import TYPE_CHECKING
+
 from cc.tools.dsim.compare_tool import CompareSimulationRunsTool
 from cc.tools.dsim.diagnose_tool import DiagnoseSimulationFailureTool
 from cc.tools.dsim.report_tool import GenerateDsimReportTool
 from cc.tools.dsim.save_context_tool import SaveProjectContextTool
 from cc.tools.dsim.sweep_tool import RunParameterSweepTool
+
+if TYPE_CHECKING:
+    from cc.tools.base import ToolRegistry
 
 
 def has_dsim_mcp_capability(registry: ToolRegistry) -> bool:

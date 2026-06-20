@@ -60,9 +60,7 @@ class McpToolProxy(Tool):
         )
 
     def is_concurrency_safe(self, tool_input: dict[str, Any]) -> bool:
-        if self._server_name == "dsim":
-            return False
-        return True  # MCP tools are assumed safe
+        return self._server_name != "dsim"
 
     async def execute(self, tool_input: dict[str, Any]) -> ToolResult:
         """Execute MCP tool, preserving structured content when possible."""

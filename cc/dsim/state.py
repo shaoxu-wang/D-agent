@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc.dsim.models import ActiveDsimContext, DsimProject
 from cc.dsim.paths import DsimPaths
 from cc.dsim.storage import read_json_file, write_json_file_atomic
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class DsimProjectStateManager:
@@ -66,10 +68,10 @@ class DsimProjectStateManager:
                 )
             elif event_type == "run_finished":
                 session = self._read_json(self.paths.sessions / f"{self.session_id}.json")
-                project_id = session.get("active_project_id")
-                if project_id:
+                active_project_id = session.get("active_project_id")
+                if active_project_id:
                     self.set_active_context(
-                        project_id=str(project_id),
+                        project_id=str(active_project_id),
                         handle_id=_optional_str(event.get("handle_id")),
                         run_id=_optional_str(event.get("run_id")),
                     )
