@@ -40,6 +40,7 @@ import sys
 import time
 from collections.abc import AsyncIterator  # noqa: TC003
 from pathlib import Path
+from uuid import uuid4
 
 import click
 
@@ -48,6 +49,7 @@ from cc.api.claude import stream_response          # provider adapter: 把 Anthr
 from cc.api.client import create_client             # Anthropic SDK 客户端工厂
 from cc.core.events import QueryEvent, TurnComplete # 内核事件类型（query_loop 的产出物）
 from cc.core.query_engine import QueryEngine        # 运行时依赖容器，封装 main → query_loop 的中间层
+from cc.dsim.runtime import build_dsim_runtime
 
 # --- 装配层 ---
 from cc.hooks.hook_runner import load_hooks         # 从 settings.json 加载 hook 配置
@@ -187,7 +189,13 @@ def _build_registry(cwd: str, call_model_factory: object | None = None, model: s
     return registry
 
 
-async def _connect_mcp_servers(cwd: str, registry: ToolRegistry) -> None:
+async def _connect_mcp_servers(
+    cwd: str,
+    registry: ToolRegistry,
+    *,
+    permission_ctx: object | None = None,
+    session_id: str | None = None,
+) -> None:
     """Load MCP configs and connect servers.
 
     MCP (Model Context Protocol) 允许外部进程向 Claude Code 暴露自定义工具。
@@ -195,7 +203,7 @@ async def _connect_mcp_servers(cwd: str, registry: ToolRegistry) -> None:
     每个 MCP server 连接后，其工具会被动态注册到 registry 中，
     从此与内置工具一视同仁地参与 query_loop 的工具调用流程。
     """
-    from cc.dsim.registry import register_dsim_tools
+    from cc.dsim.registry import has_dsim_mcp_capability, register_dsim_tools
     from cc.mcp.client import connect_mcp_server
     from cc.mcp.config import load_mcp_configs
 
@@ -204,7 +212,14 @@ async def _connect_mcp_servers(cwd: str, registry: ToolRegistry) -> None:
         logger.info("Connecting MCP server: %s", config.name)
         await connect_mcp_server(config, registry)
 
-    register_dsim_tools(registry)
+    if has_dsim_mcp_capability(registry):
+        runtime = build_dsim_runtime(
+            workspace=cwd,
+            session_id=session_id or "local",
+            permission_ctx=permission_ctx,
+            registry=registry,
+        )
+        register_dsim_tools(registry, runtime=runtime)
 
 
 def _load_env() -> dict[str, str]:
@@ -552,7 +567,13 @@ async def _run_print_mode(prompt: str, model: str) -> None:
     engine = _build_engine(client, model, cwd, is_interactive=False)
 
     # MCP
-    await _connect_mcp_servers(cwd, engine.registry)
+    session_id = f"print-{uuid4().hex[:8]}"
+    await _connect_mcp_servers(
+        cwd,
+        engine.registry,
+        permission_ctx=engine.permission_ctx,
+        session_id=session_id,
+    )
 
     async for event in engine.submit(prompt, max_turns=20):
         render_event(event)
@@ -604,7 +625,13 @@ async def _run_repl(model: str, resume_id: str | None = None) -> None:
     engine = _build_engine(client, model, cwd)
 
     # MCP
-    await _connect_mcp_servers(cwd, engine.registry)
+    session_id = resume_id or str(uuid4())[:8]
+    await _connect_mcp_servers(
+        cwd,
+        engine.registry,
+        permission_ctx=engine.permission_ctx,
+        session_id=session_id,
+    )
 
     # Skills — load and register as slash commands
     skills = load_skills(cwd)
@@ -659,12 +686,9 @@ async def _run_repl(model: str, resume_id: str | None = None) -> None:
         else:
             console.print(f"[yellow]Session {resume_id} not found, starting fresh.[/]")
 
-    from uuid import uuid4
-
     from cc.ui.renderer import print_welcome
 
     print_welcome()
-    session_id = resume_id or str(uuid4())[:8]
     claude_md = load_claude_md(cwd)
 
     # ==========================================

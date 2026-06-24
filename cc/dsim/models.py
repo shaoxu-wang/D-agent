@@ -30,7 +30,10 @@ class DsimProject(VersionedModel):
     parameters: list[dict[str, Any]] = Field(default_factory=list)
     run_summaries: list[dict[str, Any]] = Field(default_factory=list)
     curve_summaries: list[dict[str, Any]] = Field(default_factory=list)
-    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    workflow_summaries: list[dict[str, Any]] = Field(default_factory=list)
+    sweep_summaries: list[dict[str, Any]] = Field(default_factory=list)
+    artifact_refs: list[dict[str, Any]] = Field(default_factory=list)
+    memory_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ActiveDsimContext(VersionedModel):

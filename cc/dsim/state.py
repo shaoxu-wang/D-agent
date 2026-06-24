@@ -39,18 +39,27 @@ class DsimProjectStateManager:
         write_json_file_atomic(self.paths.sessions / f"{self.session_id}.json", context.model_dump())
         self._merge_project_index(project_id)
 
+    def get_active_context(self) -> ActiveDsimContext | None:
+        """Return the current session's active DSim context."""
+        data = self._read_json(self.paths.sessions / f"{self.session_id}.json")
+        if not data:
+            return None
+        return ActiveDsimContext(**data)
+
     def upsert_project(self, *, project_id: str, project_path: str) -> None:
         """Create or update a project record without dropping accumulated summaries."""
-        existing = self._read_json(self.paths.projects / f"{project_id}.json")
-        if existing:
-            existing["project_id"] = project_id
-            existing["project_path"] = project_path
-            project = DsimProject(**existing)
-        else:
-            project = DsimProject(project_id=project_id, project_path=project_path)
+        project = self._load_or_create_project(project_id)
+        project.project_path = project_path
 
         write_json_file_atomic(self.paths.projects / f"{project_id}.json", project.model_dump())
         self._merge_project_index(project_id)
+
+    def get_project(self, project_id: str) -> DsimProject | None:
+        """Return a persisted project by id."""
+        data = self._read_json(self.paths.projects / f"{project_id}.json")
+        if not data:
+            return None
+        return self._project_from_data(data, project_id)
 
     def apply_state_events(self, events: list[dict[str, Any]]) -> None:
         """Apply normalized DSim state events from tool result adapters."""
@@ -76,6 +85,62 @@ class DsimProjectStateManager:
                         run_id=_optional_str(event.get("run_id")),
                     )
 
+    def append_run_summary(self, *, project_id: str, summary: dict[str, Any]) -> None:
+        project = self._load_or_create_project(project_id)
+        project.run_summaries.append(summary)
+        self._write_project(project)
+
+    def append_curve_summary(self, *, project_id: str, summary: dict[str, Any]) -> None:
+        project = self._load_or_create_project(project_id)
+        project.curve_summaries.append(summary)
+        self._write_project(project)
+
+    def get_curve_summary(self, project_id: str, run_id: str) -> dict[str, Any] | None:
+        project = self.get_project(project_id)
+        if project is None:
+            return None
+        for summary in project.curve_summaries:
+            if summary.get("run_id") == run_id:
+                return summary
+        return None
+
+    def list_curve_summaries(self, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(project_id)
+        return [] if project is None else list(project.curve_summaries)
+
+    def get_run_summary(self, project_id: str, run_id: str) -> dict[str, Any] | None:
+        project = self.get_project(project_id)
+        if project is None:
+            return None
+        for summary in project.run_summaries:
+            if summary.get("run_id") == run_id:
+                return summary
+        return None
+
+    def list_run_summaries(self, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(project_id)
+        return [] if project is None else list(project.run_summaries)
+
+    def append_workflow_summary(self, *, project_id: str, summary: dict[str, Any]) -> None:
+        project = self._load_or_create_project(project_id)
+        project.workflow_summaries.append(summary)
+        self._write_project(project)
+
+    def append_sweep_summary(self, *, project_id: str, summary: dict[str, Any]) -> None:
+        project = self._load_or_create_project(project_id)
+        project.sweep_summaries.append(summary)
+        self._write_project(project)
+
+    def add_artifact_ref(self, *, project_id: str, artifact_ref: dict[str, Any]) -> None:
+        project = self._load_or_create_project(project_id)
+        project.artifact_refs.append(artifact_ref)
+        self._write_project(project)
+
+    def record_memory_candidate(self, *, project_id: str, candidate: dict[str, Any]) -> None:
+        project = self._load_or_create_project(project_id)
+        project.memory_candidates.append(candidate)
+        self._write_project(project)
+
     def _merge_project_index(self, project_id: str) -> None:
         index_path = self.paths.root / "project_state.json"
         index = self._read_json(index_path)
@@ -87,6 +152,29 @@ class DsimProjectStateManager:
         if not path.exists():
             return {}
         return read_json_file(path)
+
+    def _load_or_create_project(self, project_id: str) -> DsimProject:
+        existing = self._read_json(self.paths.projects / f"{project_id}.json")
+        if existing:
+            return self._project_from_data(existing, project_id)
+        return DsimProject(project_id=project_id, project_path="")
+
+    def _write_project(self, project: DsimProject) -> None:
+        write_json_file_atomic(self.paths.projects / f"{project.project_id}.json", project.model_dump())
+
+    def _project_from_data(self, data: dict[str, Any], project_id: str) -> DsimProject:
+        normalized = dict(data)
+        normalized["project_id"] = project_id
+        if "artifact_refs" not in normalized and "artifacts" in normalized:
+            normalized["artifact_refs"] = list(normalized.get("artifacts", []))
+        normalized.pop("artifacts", None)
+        normalized.setdefault("workflow_summaries", [])
+        normalized.setdefault("sweep_summaries", [])
+        normalized.setdefault("artifact_refs", [])
+        normalized.setdefault("memory_candidates", [])
+        normalized.setdefault("run_summaries", [])
+        normalized.setdefault("curve_summaries", [])
+        return DsimProject(**normalized)
 
 
 def _optional_str(value: object) -> str | None:

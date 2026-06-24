@@ -35,6 +35,7 @@ class TestQueryEngineInit:
         assert engine.messages == []
         assert engine.total_input_tokens == 0
         assert engine.total_output_tokens == 0
+        assert engine.permission_ctx is None
 
     def test_permission_ctx_optional(self) -> None:
         """permission_ctx=None should work (pre-P2a behavior)."""
@@ -45,7 +46,18 @@ class TestQueryEngineInit:
             system_prompt="test",
             permission_ctx=None,
         )
-        assert engine._permission_ctx is None
+        assert engine.permission_ctx is None
+
+    def test_permission_ctx_property_returns_same_object(self) -> None:
+        ctx = object()
+        engine = QueryEngine(
+            client=_make_mock_client(),
+            model="test-model",
+            registry=ToolRegistry(),
+            system_prompt="test",
+            permission_ctx=ctx,
+        )
+        assert engine.permission_ctx is ctx
 
     def test_model_setter(self) -> None:
         engine = QueryEngine(

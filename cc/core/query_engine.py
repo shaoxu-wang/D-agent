@@ -148,6 +148,11 @@ class QueryEngine:
     def client(self) -> anthropic.AsyncAnthropic:
         return self._client
 
+    @property
+    def permission_ctx(self) -> Any | None:
+        """Return the configured permission context, if any."""
+        return self._permission_ctx
+
     # -- Core API --
 
     def make_call_model(self, model: str | None = None, max_tokens: int = 16384) -> CallModelFn:

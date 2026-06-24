@@ -45,3 +45,33 @@ def test_state_manager_applies_state_events_without_overwriting_project_index() 
     assert "project-2" in index
 
     shutil.rmtree(tmp_path)
+
+
+def test_state_manager_exposes_active_context_and_project() -> None:
+    tmp_path = _workspace_tmp("state_access")
+    manager = DsimProjectStateManager(workspace=tmp_path, session_id="session-1")
+
+    manager.set_active_context(project_id="project-1", handle_id="handle-1", run_id="run-1")
+    manager.upsert_project(project_id="project-1", project_path=str(tmp_path / "demo.dsim"))
+
+    active = manager.get_active_context()
+    project = manager.get_project("project-1")
+
+    assert active is not None
+    assert active.active_project_id == "project-1"
+    assert project is not None
+    assert project.project_id == "project-1"
+
+    shutil.rmtree(tmp_path)
+
+
+def test_state_manager_exposes_curve_summaries() -> None:
+    tmp_path = _workspace_tmp("curve_access")
+    manager = DsimProjectStateManager(workspace=tmp_path, session_id="session-1")
+
+    manager.append_curve_summary(project_id="project-1", summary={"run_id": "run-1", "metrics": {"peak": 2.0}})
+
+    assert manager.get_curve_summary("project-1", "run-1") == {"run_id": "run-1", "metrics": {"peak": 2.0}}
+    assert manager.list_curve_summaries("project-1") == [{"run_id": "run-1", "metrics": {"peak": 2.0}}]
+
+    shutil.rmtree(tmp_path)

@@ -57,3 +57,36 @@ def test_mock_backend_runs_success_and_empty_curve_case() -> None:
         assert curves.data["curves"] == []
     finally:
         shutil.rmtree(root)
+
+
+def test_mock_backend_returns_stage_2a_curve_metrics() -> None:
+    root = _workspace_tmp()
+    try:
+        backend = MockDsimBackend()
+        opened = backend.open_project(path=str(root / "demo.dsim"), project_id="project-1")
+        backend.update_parameters(opened.handle_id, [{"name": "alpha", "value": 2}])
+
+        curves = backend.read_curves(opened.handle_id, mode="summary", artifact_root=None)
+
+        curve = curves.data["curves"][0]
+        assert curve["peak"] == 2.0
+        assert curve["final_value"] == 1.0
+        assert curve["settling_hint"] == "stable"
+    finally:
+        shutil.rmtree(root)
+
+
+def test_mock_backend_returns_stage_2a_failure_signals() -> None:
+    root = _workspace_tmp()
+    try:
+        backend = MockDsimBackend()
+        opened = backend.open_project(path=str(root / "demo.dsim"), project_id="project-1")
+        backend.update_parameters(opened.handle_id, [{"name": "force_failure", "value": True}])
+
+        run = backend.run_simulation(opened.handle_id, timeout_seconds=1800)
+
+        assert run.ok is False
+        assert run.data["signal"] == "solver_failed"
+        assert run.error_code == "SIMULATION_FAILED"
+    finally:
+        shutil.rmtree(root)

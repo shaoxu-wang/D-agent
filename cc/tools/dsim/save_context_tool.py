@@ -10,13 +10,19 @@ from cc.tools.base import Tool, ToolResult, ToolSchema
 class SaveProjectContextTool(Tool):
     """Save confirmed DSim project context."""
 
+    def __init__(self, workflow_service: Any | None = None) -> None:
+        self._workflow_service = workflow_service
+
     def get_name(self) -> str:
         return "SaveProjectContext"
 
     def get_schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.get_name(),
-            description="Save confirmed DSim project context.",
+            description=(
+                "Save confirmed DSim project context and memory candidates. "
+                "For multi-step work prefer RunDsimEngineeringWorkflow."
+            ),
             input_schema={"type": "object"},
         )
 
@@ -26,4 +32,7 @@ class SaveProjectContextTool(Tool):
                 content="Confirmation is required before saving interpretive DSim context.",
                 is_error=True,
             )
-        return ToolResult(content="DSim project context saved.")
+        if self._workflow_service is None:
+            return ToolResult(content="DSim project context saved.")
+        result = await self._workflow_service.save_project_context(tool_input)
+        return ToolResult(content=str(result))

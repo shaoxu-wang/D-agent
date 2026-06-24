@@ -15,8 +15,10 @@ class DsimPaths:
         self.projects = self.root / "projects"
         self.audit = self.root / "audit"
         self.results = self.root / "results"
+        self.reports = self.root / "reports"
+        self.sweeps = self.results / "sweeps"
 
     def ensure(self) -> None:
         """Create the DSim local state directory tree."""
-        for path in [self.root, self.sessions, self.projects, self.audit, self.results]:
+        for path in [self.root, self.sessions, self.projects, self.audit, self.results, self.reports, self.sweeps]:
             path.mkdir(parents=True, exist_ok=True)

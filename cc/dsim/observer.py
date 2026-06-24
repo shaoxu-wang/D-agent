@@ -38,6 +38,14 @@ class DsimToolResultObserver:
 
         adapted = self._adapter.adapt(payload)
         self._state_manager.apply_state_events(adapted.state_events)
+        for artifact in adapted.artifacts:
+            if hasattr(self._state_manager, "add_artifact_ref"):
+                runtime = payload.get("runtime", {})
+                project_id = runtime.get("project_id", runtime.get("handle_id", "unknown-project"))
+                self._state_manager.add_artifact_ref(
+                    project_id=str(project_id),
+                    artifact_ref=artifact,
+                )
         self._audit_logger.write_entry(
             {
                 "tool_call_id": tool_call_id,

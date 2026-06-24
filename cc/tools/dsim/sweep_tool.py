@@ -10,8 +10,8 @@ from cc.tools.base import Tool, ToolResult, ToolSchema
 class RunParameterSweepTool(Tool):
     """Prepare or run a conservative serial DSim parameter sweep."""
 
-    def __init__(self, invoker: Any) -> None:
-        self._invoker = invoker
+    def __init__(self, workflow_service: Any | None = None) -> None:
+        self._workflow_service = workflow_service
 
     def get_name(self) -> str:
         return "RunParameterSweep"
@@ -19,7 +19,10 @@ class RunParameterSweepTool(Tool):
     def get_schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.get_name(),
-            description="Run a serial DSim parameter sweep.",
+            description=(
+                "Run a conservative serial DSim parameter sweep and write a sweep artifact. "
+                "For multi-step work prefer RunDsimEngineeringWorkflow."
+            ),
             input_schema={"type": "object"},
         )
 
@@ -30,4 +33,7 @@ class RunParameterSweepTool(Tool):
                 content="RunParameterSweep supports at most 20 combinations without explicit confirmation.",
                 is_error=True,
             )
-        return ToolResult(content=f"Prepared serial DSim sweep with {len(combinations)} combinations.")
+        if self._workflow_service is None:
+            return ToolResult(content=f"Prepared serial DSim sweep with {len(combinations)} combinations.")
+        result = await self._workflow_service.run_sweep(tool_input)
+        return ToolResult(content=str(result))
