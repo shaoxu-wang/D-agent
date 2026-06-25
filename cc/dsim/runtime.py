@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 from cc.dsim.artifacts import DsimArtifactStore
 from cc.dsim.audit import DsimAuditLogger
 from cc.dsim.invoker import DsimToolInvoker
+from cc.dsim.memory_sink import DeferredMemorySink
 from cc.dsim.observer import DsimToolResultObserver
 from cc.dsim.state import DsimProjectStateManager
 from cc.permissions.gate import PermissionDecisionRecord
@@ -72,6 +73,7 @@ def build_dsim_runtime(
 
     invoker = DsimToolInvoker(registry=registry, permission_checker=_check if permission_ctx is not None else None)
     artifact_store = DsimArtifactStore(workspace=workspace)
+    memory_sink = DeferredMemorySink(state_manager=state_manager)
     bundle = DsimRuntimeBundle(
         registry=registry,
         permission_ctx=permission_ctx,
@@ -81,7 +83,7 @@ def build_dsim_runtime(
         invoker=invoker,
         artifact_store=artifact_store,
         workflow_service=None,
-        memory_sink=None,
+        memory_sink=memory_sink,
     )
     from cc.dsim.workflow import DsimWorkflowService
 

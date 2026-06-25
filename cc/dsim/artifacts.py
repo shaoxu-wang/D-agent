@@ -23,18 +23,20 @@ class DsimArtifactStore:
         report_id = f"report-{uuid4().hex[:8]}"
         path = self.paths.reports / f"{report_id}.md"
         path.write_text(markdown, encoding="utf-8")
-        return self._ref(report_id, "report", path, "text/markdown")
+        return self._ref(report_id, "report", f"local/reports/{report_id}.md", path, "text/markdown")
 
     def write_sweep_summary(self, *, project_id: str, summary: dict[str, object]) -> dict[str, str]:
         sweep_id = f"sweep-{uuid4().hex[:8]}"
         path = self.paths.sweeps / f"{sweep_id}.json"
         path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-        return self._ref(sweep_id, "sweep_summary", path, "application/json")
+        return self._ref(sweep_id, "sweep_summary", f"local/sweeps/{sweep_id}.json", path, "application/json")
 
-    def _ref(self, artifact_id: str, kind: str, path: Path, mime_type: str) -> dict[str, str]:
+    def _ref(self, artifact_id: str, kind: str, storage_key: str, path: Path, mime_type: str) -> dict[str, str]:
         return {
             "artifact_id": artifact_id,
             "kind": kind,
             "path": str(path.resolve()),
+            "storage_key": storage_key,
+            "uri": "",
             "mime_type": mime_type,
         }

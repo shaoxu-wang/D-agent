@@ -27,13 +27,16 @@ class CompareSimulationRunsTool(Tool):
         )
 
     async def execute(self, tool_input: dict[str, Any]) -> ToolResult:
-        if self._workflow_service is None:
-            runs = list(tool_input.get("runs", []))
-            if len(runs) < 2:
-                return ToolResult(content="CompareSimulationRuns requires at least two runs.", is_error=True)
-
-            first = runs[0].get("run_id", "run-1")
-            second = runs[1].get("run_id", "run-2")
-            return ToolResult(content=f"Compared DSim runs {first} and {second}.")
+        runs = list(tool_input.get("runs", []))
+        if len(runs) < 2:
+            return ToolResult(content="CompareSimulationRuns requires at least two runs.", is_error=True)
+        if self._workflow_service is None or not hasattr(self._workflow_service, "compare_runs"):
+            return ToolResult(content="DSim workflow service is required for CompareSimulationRuns.", is_error=True)
         result = await self._workflow_service.compare_runs(tool_input)
-        return ToolResult(content=str(result))
+        structured = result.model_dump() if hasattr(result, "model_dump") else result
+        first = runs[0].get("run_id", "unknown-run")
+        second = runs[1].get("run_id", "unknown-run")
+        return ToolResult(
+            content=f"DSim runs compared: {first} vs {second}.",
+            metadata={"structured": structured},
+        )

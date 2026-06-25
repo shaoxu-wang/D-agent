@@ -103,10 +103,15 @@ class DsimWorkflowService:
                 confirmed=True,
             )
             memory_candidates.append(candidate)
-            self._runtime.state_manager.record_memory_candidate(
-                project_id=project_id,
-                candidate=candidate.model_dump(),
-            )
+            candidate_payload = candidate.model_dump()
+            memory_sink = getattr(self._runtime, "memory_sink", None)
+            if memory_sink is not None and hasattr(memory_sink, "save_confirmed"):
+                memory_sink.save_confirmed(candidate=candidate_payload, context={"project_id": project_id})
+            else:
+                self._runtime.state_manager.record_memory_candidate(
+                    project_id=project_id,
+                    candidate=candidate_payload,
+                )
 
         return DsimWorkflowResult(
             mode=DsimWorkflowMode.inspect_only,
@@ -339,6 +344,7 @@ class DsimWorkflowService:
         timeout_seconds = int(tool_input.get("timeout_seconds") or 1800)
         results = await run_sweep_combinations(
             runtime=self._runtime,
+            project_id=project_id,
             handle_id=handle_id,
             combinations=combinations,
             timeout_seconds=timeout_seconds,

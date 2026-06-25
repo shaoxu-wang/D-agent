@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from cc.dsim.workflow_models import (
+    DsimArtifactRef,
     DsimMemoryCandidate,
     DsimParameterDiff,
     DsimRunComparison,
@@ -34,6 +35,21 @@ def test_workflow_result_serializes_without_raw_tool_result() -> None:
 
     assert dumped["handle_id"] == "handle-1"
     assert "tool_result" not in dumped
+
+
+def test_artifact_ref_requires_storage_key_and_keeps_local_path() -> None:
+    ref = DsimArtifactRef(
+        artifact_id="report-1",
+        kind="report",
+        path="C:/workspace/.dsim_agent/reports/report-1.md",
+        storage_key="local/reports/report-1.md",
+        uri=None,
+        mime_type="text/markdown",
+    )
+
+    assert ref.storage_key == "local/reports/report-1.md"
+    assert ref.path.endswith("report-1.md")
+    assert ref.uri is None
 
 
 def test_memory_candidate_tracks_evidence_and_confirmation() -> None:

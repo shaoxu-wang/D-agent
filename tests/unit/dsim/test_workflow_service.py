@@ -80,6 +80,15 @@ class RecordingInvoker:
         )
 
 
+class RecordingMemorySink:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def save_confirmed(self, *, candidate: dict, context: dict) -> dict:
+        self.calls.append({"candidate": candidate, "context": context})
+        return {**candidate, "long_term_memory_status": "deferred"}
+
+
 def _structured_tool_result(
     *,
     tool_name: str,
@@ -127,6 +136,27 @@ def _build_service_with_invoker(
     return service, state_manager
 
 
+def _build_service_with_memory_sink(
+    workspace: Path,
+    memory_sink: RecordingMemorySink,
+) -> tuple[DsimWorkflowService, DsimProjectStateManager]:
+    state_manager = DsimProjectStateManager(workspace=workspace, session_id="session-1")
+    service = DsimWorkflowService(
+        runtime=DsimRuntimeBundle(
+            registry=object(),
+            permission_ctx=object(),
+            state_manager=state_manager,
+            audit_logger=object(),
+            observer=object(),
+            invoker=object(),
+            artifact_store=DsimArtifactStore(workspace=workspace),
+            workflow_service=object(),
+            memory_sink=memory_sink,
+        )
+    )
+    return service, state_manager
+
+
 @pytest.mark.asyncio
 async def test_workflow_service_saves_confirmed_context_and_memory_candidate() -> None:
     workspace = Path(".test_dsim_workflow_service")
@@ -149,6 +179,29 @@ async def test_workflow_service_saves_confirmed_context_and_memory_candidate() -
     assert project is not None
     assert project.workflow_summaries
     assert project.memory_candidates
+    shutil.rmtree(workspace)
+
+
+@pytest.mark.asyncio
+async def test_workflow_service_uses_memory_sink_for_confirmed_candidates() -> None:
+    workspace = Path(".test_dsim_workflow_service")
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    memory_sink = RecordingMemorySink()
+    service, _state_manager = _build_service_with_memory_sink(workspace, memory_sink)
+
+    result = await service.save_project_context(
+        {
+            "project_id": "project-memory",
+            "kind": "preference",
+            "content": "Keep reports local.",
+            "confirmed": True,
+        }
+    )
+
+    assert result.memory_candidates[0].kind == "preference"
+    assert memory_sink.calls[0]["context"] == {"project_id": "project-memory"}
+    assert memory_sink.calls[0]["candidate"]["kind"] == "preference"
     shutil.rmtree(workspace)
 
 
@@ -199,6 +252,48 @@ async def test_workflow_service_runs_sweep_and_persists_summary() -> None:
     assert project.sweep_summaries
     assert result.artifacts
     assert result.artifacts[0].kind == "sweep_summary"
+    shutil.rmtree(workspace)
+
+
+@pytest.mark.asyncio
+async def test_workflow_service_sweep_reads_curve_summary_for_each_success() -> None:
+    workspace = Path(".test_dsim_workflow_service")
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    invoker = RecordingInvoker(
+        [
+            _structured_tool_result(tool_name="UpdateDsimParameters", data={"parameters": {"alpha": 1}}),
+            _structured_tool_result(tool_name="RunDsimSimulation", data={"status": "completed", "run_id": "run-1"}),
+            _structured_tool_result(
+                tool_name="ReadDsimCurves",
+                data={"run_id": "run-1", "metrics": {"peak": 1.0}},
+            ),
+            _structured_tool_result(tool_name="UpdateDsimParameters", data={"parameters": {"alpha": 2}}),
+            _structured_tool_result(tool_name="RunDsimSimulation", data={"status": "completed", "run_id": "run-2"}),
+            _structured_tool_result(
+                tool_name="ReadDsimCurves",
+                data={"run_id": "run-2", "metrics": {"peak": 2.0}},
+            ),
+        ]
+    )
+    service, state_manager = _build_service_with_invoker(workspace, invoker)
+
+    result = await service.run_sweep(
+        {
+            "project_id": "project-sweep",
+            "handle_id": "handle-1",
+            "combinations": [{"parameter": "alpha", "value": 1}, {"parameter": "alpha", "value": 2}],
+            "confirmed": True,
+        }
+    )
+
+    read_calls = [call for call in invoker.calls if call[0] == "mcp__dsim__ReadDsimCurves"]
+    project = state_manager.get_project("project-sweep")
+    assert len(read_calls) == 2
+    assert result.summary["results"][0]["curve_summary"]["metrics"]["peak"] == 1.0
+    assert result.summary["results"][1]["curve_summary"]["metrics"]["peak"] == 2.0
+    assert project is not None
+    assert [item["run_id"] for item in project.curve_summaries] == ["run-1", "run-2"]
     shutil.rmtree(workspace)
 
 
@@ -300,6 +395,8 @@ async def test_workflow_service_compare_runs_reads_stored_summaries() -> None:
         }
     )
 
+    assert result.mode == DsimWorkflowMode.report_existing
+    assert result.summary["mode"] == "compare_runs"
     assert result.summary["first_status"] == "completed"
     assert result.summary["second_status"] == "failed"
     assert result.summary["status_changed"] is True

@@ -120,6 +120,7 @@ async def read_curve_summary(
 async def run_sweep_combinations(
     *,
     runtime: DsimRuntimeBundle,
+    project_id: str | None,
     handle_id: str | None,
     combinations: list[dict[str, Any]],
     timeout_seconds: int,
@@ -151,13 +152,27 @@ async def run_sweep_combinations(
             step_name=f"sweep_run_{index}",
         )
         payload = structured_payload(run_result)
-        results.append(
-            {
-                "index": index,
-                "ok": not run_result.is_error,
-                "combination": combination,
-                "run_id": extract_run_id(payload),
-                "error": payload.get("error"),
-            }
-        )
+        run_id = extract_run_id(payload)
+        item = {
+            "index": index,
+            "ok": not run_result.is_error,
+            "combination": combination,
+            "run_id": run_id,
+            "error": payload.get("error"),
+        }
+        if not run_result.is_error:
+            curve_summary: dict[str, Any] = {}
+            await read_curve_summary(
+                runtime=runtime,
+                project_id=project_id,
+                handle_id=handle_id,
+                run_id=run_id,
+                steps=steps,
+                summary=curve_summary,
+            )
+            if "curve_summary" in curve_summary:
+                item["curve_summary"] = curve_summary["curve_summary"]
+            if "curve_error" in curve_summary:
+                item["curve_error"] = curve_summary["curve_error"]
+        results.append(item)
     return results

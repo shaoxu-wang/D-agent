@@ -20,6 +20,8 @@ class DsimArtifactRef(BaseModel):
     artifact_id: str
     kind: str
     path: str
+    storage_key: str
+    uri: str | None = None
     mime_type: str
 
 

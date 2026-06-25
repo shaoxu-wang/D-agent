@@ -27,10 +27,12 @@ class GenerateDsimReportTool(Tool):
         )
 
     async def execute(self, tool_input: dict[str, Any]) -> ToolResult:
-        if self._workflow_service is None:
-            project_id = tool_input.get("project_id", "unknown-project")
-            runs = list(tool_input.get("runs", []))
-            run_lines = ", ".join(str(run.get("run_id", "unknown-run")) for run in runs) or "no runs"
-            return ToolResult(content=f"DSim report for {project_id}. Runs: {run_lines}.")
+        if self._workflow_service is None or not hasattr(self._workflow_service, "generate_report"):
+            return ToolResult(content="DSim workflow service is required for GenerateDsimReport.", is_error=True)
         result = await self._workflow_service.generate_report(tool_input)
-        return ToolResult(content=str(result))
+        structured = result.model_dump() if hasattr(result, "model_dump") else result
+        project_id = getattr(result, "project_id", None) or tool_input.get("project_id") or "unknown-project"
+        return ToolResult(
+            content=f"DSim report generated for {project_id}.",
+            metadata={"structured": structured},
+        )

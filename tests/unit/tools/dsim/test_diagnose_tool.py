@@ -13,13 +13,13 @@ class FakeWorkflowService:
 
 
 @pytest.mark.asyncio
-async def test_diagnose_reports_failure_reason() -> None:
+async def test_diagnose_requires_workflow_service() -> None:
     tool = DiagnoseSimulationFailureTool()
 
     result = await tool.execute({"run_id": "run-1", "status": "failed", "error": {"code": "SIMULATION_FAILED"}})
 
-    assert result.is_error is False
-    assert "SIMULATION_FAILED" in result.text
+    assert result.is_error is True
+    assert "workflow service" in result.text.lower()
 
 
 @pytest.mark.asyncio
@@ -31,4 +31,5 @@ async def test_diagnose_delegates_to_workflow_service() -> None:
     result = await tool.execute(payload)
 
     assert result.is_error is False
+    assert result.metadata["structured"] == {"diagnosis": "ok"}
     assert service.calls == [payload]

@@ -15,9 +15,13 @@ def test_artifact_store_writes_report_and_sweep_summary() -> None:
 
     assert report_ref["kind"] == "report"
     assert report_ref["mime_type"] == "text/markdown"
+    assert report_ref["storage_key"].startswith("local/reports/")
+    assert "uri" in report_ref
     assert Path(report_ref["path"]).is_file()
     assert sweep_ref["kind"] == "sweep_summary"
     assert sweep_ref["mime_type"] == "application/json"
+    assert sweep_ref["storage_key"].startswith("local/sweeps/")
+    assert "uri" in sweep_ref
     assert Path(sweep_ref["path"]).is_file()
 
     shutil.rmtree(workspace)

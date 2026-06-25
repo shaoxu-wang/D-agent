@@ -48,6 +48,7 @@ async def test_workflow_tool_delegates_to_workflow_service() -> None:
     result = await tool.execute({"mode": "inspect_only", "project_id": "project-1"})
 
     assert result.is_error is False
+    assert result.metadata["structured"] == {"mode": "inspect_only", "ok": True}
     assert service.calls
     assert service.calls[0].project_id == "project-1"
 

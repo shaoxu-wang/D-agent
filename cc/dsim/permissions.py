@@ -11,11 +11,24 @@ class DsimRiskClassifier:
     """Classify DSim MCP and agent-side tool calls by execution risk."""
 
     AGENT_TOOL_NAMES = frozenset({
+        "RunDsimEngineeringWorkflow",
+        "SaveProjectContext",
+        "GenerateDsimReport",
+        "DiagnoseSimulationFailure",
+        "CompareSimulationRuns",
+        "RunParameterSweep",
+    })
+    MCP_ALIAS_NAMES = frozenset({
         "OpenDsimProject",
         "ListDsimCurves",
         "ReadDsimCurves",
         "RunDsimSimulation",
-        "DsimWorkflow",
+    })
+    EXECUTION_AGENT_TOOLS = frozenset({
+        "RunDsimEngineeringWorkflow",
+        "DiagnoseSimulationFailure",
+        "CompareSimulationRuns",
+        "RunParameterSweep",
     })
     STRONG_ASK_KEYWORDS = ("Delete", "SaveSchematicFile", "Write", "Export")
     RAW_DATA_TOOLS = frozenset({
@@ -25,7 +38,11 @@ class DsimRiskClassifier:
 
     def is_dsim_tool(self, tool_name: str) -> bool:
         """Return whether the tool belongs to the DSim integration boundary."""
-        return tool_name.startswith("mcp__dsim__") or tool_name in self.AGENT_TOOL_NAMES
+        return (
+            tool_name.startswith("mcp__dsim__")
+            or tool_name in self.AGENT_TOOL_NAMES
+            or tool_name in self.MCP_ALIAS_NAMES
+        )
 
     def classify(self, tool_name: str, tool_input: dict[str, object] | None = None) -> DsimRisk:
         """Return the required permission level for a DSim tool call."""
@@ -36,6 +53,9 @@ class DsimRiskClassifier:
             return "strong_ask"
 
         if tool_name in self.RAW_DATA_TOOLS:
+            return "ask"
+
+        if tool_name in self.EXECUTION_AGENT_TOOLS:
             return "ask"
 
         if tool_name == "ReadDsimCurves":

@@ -58,5 +58,16 @@ class RunDsimEngineeringWorkflowTool(Tool):
         except ValidationError as exc:
             return ToolResult(content=f"Invalid DSim workflow request: {exc}", is_error=True)
 
+        if self._workflow_service is None or not hasattr(self._workflow_service, "run"):
+            return ToolResult(
+                content="DSim workflow service is required for RunDsimEngineeringWorkflow.",
+                is_error=True,
+            )
+
         result = await self._workflow_service.run(request)
-        return ToolResult(content=str(result))
+        structured = result.model_dump() if hasattr(result, "model_dump") else result
+        project_id = getattr(result, "project_id", None) or tool_input.get("project_id") or "unknown-project"
+        return ToolResult(
+            content=f"DSim workflow {request.mode.value} completed for {project_id}.",
+            metadata={"structured": structured},
+        )

@@ -18,7 +18,13 @@ def test_success_response_shape() -> None:
         "tool": "OpenDsimProject",
         "workflow": "OpenDsimProject",
         "data": {"handle_id": "h1"},
-        "runtime": {"project_id": "p1"},
+        "runtime": {
+            "client_id": None,
+            "session_id": None,
+            "project_id": "p1",
+            "handle_id": None,
+            "run_id": None,
+        },
         "state_updates": [{"type": "active_handle", "handle_id": "h1"}],
         "artifacts": [{"kind": "summary", "path": ".dsim_agent/results/runs/r1.json"}],
         "warnings": ["minor warning"],
@@ -41,12 +47,18 @@ def test_error_response_shape() -> None:
     assert result["tool"] == "OpenDsimProject"
     assert result["workflow"] == "OpenDsimProject"
     assert result["data"] == {}
-    assert result["runtime"] == {"project_id": "p1"}
+    assert result["runtime"] == {
+        "client_id": None,
+        "session_id": None,
+        "project_id": "p1",
+        "handle_id": None,
+        "run_id": None,
+    }
     assert result["state_updates"] == []
     assert result["artifacts"] == []
     assert result["warnings"] == []
     assert result["error"] == {
         "code": "DSIM_FILE_NOT_FOUND",
         "message": "File not found",
-        "detail": {"path": "missing.dsim"},
+        "details": {"path": "missing.dsim"},
     }

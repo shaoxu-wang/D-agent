@@ -13,9 +13,25 @@ def _workspace_tmp() -> Path:
     return root
 
 
+def _assert_stage_2b_envelope(result: dict) -> None:
+    assert set(["ok", "service", "tool", "data", "error", "runtime", "artifacts"]).issubset(result)
+    assert result["service"] == "dsim"
+    assert isinstance(result["data"], dict)
+    assert isinstance(result["runtime"], dict)
+    assert set(["client_id", "session_id", "project_id", "handle_id", "run_id"]).issubset(result["runtime"])
+    assert isinstance(result["artifacts"], list)
+    if result["ok"]:
+        assert result["error"] is None
+    else:
+        assert result["error"]["code"]
+        assert result["error"]["message"]
+        assert "details" in result["error"]
+
+
 def test_validate_environment_reports_mock_backend() -> None:
     result = workflows.ValidateDsimEnvironment()
 
+    _assert_stage_2b_envelope(result)
     assert result["ok"] is True
     assert result["data"]["backend"] == "mock"
     assert result["data"]["real_api_available"] is False
@@ -26,6 +42,7 @@ def test_open_project_creates_handle_and_state_update() -> None:
     try:
         result = workflows.OpenDsimProject(path=str(root / "demo.dsim"), project_id="project-1")
 
+        _assert_stage_2b_envelope(result)
         assert result["ok"] is True
         assert result["runtime"]["project_id"] == "project-1"
         assert result["data"]["handle_id"].startswith("mock-handle-")
@@ -44,6 +61,7 @@ def test_run_simulation_can_timeout() -> None:
 
         result = workflows.RunDsimSimulation(handle_id=opened["data"]["handle_id"], timeout_seconds=0)
 
+        _assert_stage_2b_envelope(result)
         assert result["ok"] is False
         assert result["error"]["code"] == "SIMULATION_TIMEOUT"
         assert result["data"]["status"] == "timeout"
@@ -61,6 +79,7 @@ def test_update_parameters_is_fail_fast() -> None:
             parameters=[{"name": "", "value": 1}],
         )
 
+        _assert_stage_2b_envelope(result)
         assert result["ok"] is False
         assert result["error"]["code"] == "INVALID_PARAMETER"
     finally:

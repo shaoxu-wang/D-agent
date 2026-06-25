@@ -32,7 +32,12 @@ class SaveProjectContextTool(Tool):
                 content="Confirmation is required before saving interpretive DSim context.",
                 is_error=True,
             )
-        if self._workflow_service is None:
-            return ToolResult(content="DSim project context saved.")
+        if self._workflow_service is None or not hasattr(self._workflow_service, "save_project_context"):
+            return ToolResult(content="DSim workflow service is required for SaveProjectContext.", is_error=True)
         result = await self._workflow_service.save_project_context(tool_input)
-        return ToolResult(content=str(result))
+        structured = result.model_dump() if hasattr(result, "model_dump") else result
+        project_id = getattr(result, "project_id", None) or tool_input.get("project_id") or "unknown-project"
+        return ToolResult(
+            content=f"DSim project context saved for {project_id}.",
+            metadata={"structured": structured},
+        )

@@ -14,12 +14,22 @@ class FakeWorkflowService:
 
 @pytest.mark.asyncio
 async def test_compare_requires_two_runs() -> None:
-    tool = CompareSimulationRunsTool()
+    tool = CompareSimulationRunsTool(workflow_service=object())
 
     result = await tool.execute({"runs": [{"run_id": "run-1"}]})
 
     assert result.is_error is True
     assert "two runs" in result.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_compare_requires_workflow_service() -> None:
+    tool = CompareSimulationRunsTool()
+
+    result = await tool.execute({"runs": [{"run_id": "run-1"}, {"run_id": "run-2"}]})
+
+    assert result.is_error is True
+    assert "workflow service" in result.text.lower()
 
 
 @pytest.mark.asyncio
@@ -31,4 +41,5 @@ async def test_compare_delegates_to_workflow_service() -> None:
     result = await tool.execute(payload)
 
     assert result.is_error is False
+    assert result.metadata["structured"] == {"comparison": "ok"}
     assert service.calls == [payload]

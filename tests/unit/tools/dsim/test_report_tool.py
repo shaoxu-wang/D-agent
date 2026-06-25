@@ -13,14 +13,13 @@ class FakeWorkflowService:
 
 
 @pytest.mark.asyncio
-async def test_generate_report_uses_available_summaries() -> None:
+async def test_generate_report_requires_workflow_service() -> None:
     tool = GenerateDsimReportTool()
 
     result = await tool.execute({"project_id": "project-1", "runs": [{"run_id": "run-1", "status": "completed"}]})
 
-    assert result.is_error is False
-    assert "project-1" in result.text
-    assert "run-1" in result.text
+    assert result.is_error is True
+    assert "workflow service" in result.text.lower()
 
 
 @pytest.mark.asyncio
@@ -32,4 +31,5 @@ async def test_generate_report_delegates_to_workflow_service() -> None:
     result = await tool.execute(payload)
 
     assert result.is_error is False
+    assert result.metadata["structured"] == {"report": "ok"}
     assert service.calls == [payload]

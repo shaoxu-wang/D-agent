@@ -25,6 +25,24 @@ def test_dsim_risk_classifier_detects_raw_curve_read():
     assert classifier.classify("ReadDsimCurves", {"mode": "summary"}) == "allow"
 
 
+def test_dsim_risk_classifier_uses_real_agent_tool_names():
+    classifier = DsimRiskClassifier()
+
+    assert classifier.is_dsim_tool("RunDsimEngineeringWorkflow") is True
+    assert classifier.is_dsim_tool("RunParameterSweep") is True
+    assert classifier.is_dsim_tool("DsimWorkflow") is False
+    assert classifier.classify("RunDsimEngineeringWorkflow", {"mode": "single_run"}) == "ask"
+    assert classifier.classify("RunParameterSweep", {"combinations": [{"value": 1}]}) == "ask"
+    assert classifier.classify("SaveProjectContext", {"kind": "note"}) == "allow"
+
+
+def test_dsim_risk_classifier_asks_for_large_sweep():
+    classifier = DsimRiskClassifier()
+    combinations = [{"value": index} for index in range(21)]
+
+    assert classifier.classify("RunParameterSweep", {"combinations": combinations}) == "ask"
+
+
 def test_permission_decision_record_contains_tool_call_identity():
     record = PermissionDecisionRecord(
         tool_call_id="toolu_1",

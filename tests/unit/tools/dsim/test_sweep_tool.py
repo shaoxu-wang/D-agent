@@ -14,13 +14,23 @@ class FakeWorkflowService:
 
 @pytest.mark.asyncio
 async def test_sweep_rejects_more_than_twenty_combinations_without_confirmation() -> None:
-    tool = RunParameterSweepTool(workflow_service=None)
+    tool = RunParameterSweepTool(workflow_service=object())
     combinations = [{"value": index} for index in range(21)]
 
     result = await tool.execute({"handle_id": "h1", "parameter": "R1", "combinations": combinations})
 
     assert result.is_error is True
     assert "20" in result.text
+
+
+@pytest.mark.asyncio
+async def test_sweep_requires_workflow_service() -> None:
+    tool = RunParameterSweepTool()
+
+    result = await tool.execute({"project_id": "project-1", "combinations": [{"value": 1}], "confirmed": True})
+
+    assert result.is_error is True
+    assert "workflow service" in result.text.lower()
 
 
 @pytest.mark.asyncio
@@ -32,4 +42,5 @@ async def test_sweep_delegates_to_workflow_service() -> None:
     result = await tool.execute(payload)
 
     assert result.is_error is False
+    assert result.metadata["structured"] == {"sweep": "ok"}
     assert service.calls == [payload]

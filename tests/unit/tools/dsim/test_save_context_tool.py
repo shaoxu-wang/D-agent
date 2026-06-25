@@ -14,12 +14,22 @@ class FakeWorkflowService:
 
 @pytest.mark.asyncio
 async def test_save_project_context_requires_confirmation_for_conclusions() -> None:
-    tool = SaveProjectContextTool()
+    tool = SaveProjectContextTool(workflow_service=object())
 
     result = await tool.execute({"kind": "conclusion", "content": "This setup is preferred."})
 
     assert result.is_error is True
     assert "confirmation" in result.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_save_project_context_requires_workflow_service() -> None:
+    tool = SaveProjectContextTool()
+
+    result = await tool.execute({"project_id": "project-1", "kind": "note", "content": "context"})
+
+    assert result.is_error is True
+    assert "workflow service" in result.text.lower()
 
 
 @pytest.mark.asyncio
@@ -30,4 +40,5 @@ async def test_save_project_context_delegates_to_workflow_service() -> None:
     result = await tool.execute({"project_id": "project-1", "kind": "note", "content": "context"})
 
     assert result.is_error is False
+    assert result.metadata["structured"] == {"saved": True}
     assert service.calls == [{"project_id": "project-1", "kind": "note", "content": "context"}]

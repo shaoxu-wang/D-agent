@@ -49,8 +49,6 @@ from cc.api.claude import stream_response          # provider adapter: 把 Anthr
 from cc.api.client import create_client             # Anthropic SDK 客户端工厂
 from cc.core.events import QueryEvent, TurnComplete # 内核事件类型（query_loop 的产出物）
 from cc.core.query_engine import QueryEngine        # 运行时依赖容器，封装 main → query_loop 的中间层
-from cc.dsim.runtime import build_dsim_runtime
-
 # --- 装配层 ---
 from cc.hooks.hook_runner import load_hooks         # 从 settings.json 加载 hook 配置
 from cc.models.messages import Message, UserMessage  # transcript 的基本元素
@@ -203,7 +201,7 @@ async def _connect_mcp_servers(
     每个 MCP server 连接后，其工具会被动态注册到 registry 中，
     从此与内置工具一视同仁地参与 query_loop 的工具调用流程。
     """
-    from cc.dsim.registry import has_dsim_mcp_capability, register_dsim_tools
+    from cc.dsim.bootstrap import bootstrap_dsim_runtime
     from cc.mcp.client import connect_mcp_server
     from cc.mcp.config import load_mcp_configs
 
@@ -212,14 +210,12 @@ async def _connect_mcp_servers(
         logger.info("Connecting MCP server: %s", config.name)
         await connect_mcp_server(config, registry)
 
-    if has_dsim_mcp_capability(registry):
-        runtime = build_dsim_runtime(
-            workspace=cwd,
-            session_id=session_id or "local",
-            permission_ctx=permission_ctx,
-            registry=registry,
-        )
-        register_dsim_tools(registry, runtime=runtime)
+    bootstrap_dsim_runtime(
+        cwd=cwd,
+        registry=registry,
+        permission_ctx=permission_ctx,
+        session_id=session_id or "local",
+    )
 
 
 def _load_env() -> dict[str, str]:

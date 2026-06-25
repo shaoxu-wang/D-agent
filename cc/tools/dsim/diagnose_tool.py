@@ -27,10 +27,12 @@ class DiagnoseSimulationFailureTool(Tool):
         )
 
     async def execute(self, tool_input: dict[str, Any]) -> ToolResult:
-        if self._workflow_service is None:
-            run_id = tool_input.get("run_id", "unknown-run")
-            error = tool_input.get("error") or {}
-            code = error.get("code", "UNKNOWN_FAILURE")
-            return ToolResult(content=f"Diagnosis for {run_id}: failure code {code}.")
+        if self._workflow_service is None or not hasattr(self._workflow_service, "diagnose_existing"):
+            return ToolResult(content="DSim workflow service is required for DiagnoseSimulationFailure.", is_error=True)
         result = await self._workflow_service.diagnose_existing(tool_input)
-        return ToolResult(content=str(result))
+        structured = result.model_dump() if hasattr(result, "model_dump") else result
+        run_id = getattr(result, "run_id", None) or tool_input.get("run_id") or "unknown-run"
+        return ToolResult(
+            content=f"DSim diagnosis completed for {run_id}.",
+            metadata={"structured": structured},
+        )

@@ -6,7 +6,7 @@ from cc.main import _connect_mcp_servers, _run_print_mode, _run_repl
 
 
 @pytest.mark.asyncio
-async def test_connect_mcp_servers_builds_runtime_after_mcp_connection(monkeypatch) -> None:
+async def test_connect_mcp_servers_bootstraps_dsim_after_mcp_connection(monkeypatch) -> None:
     calls: list[str] = []
 
     def fake_load_mcp_configs(_cwd: str):
@@ -15,39 +15,33 @@ async def test_connect_mcp_servers_builds_runtime_after_mcp_connection(monkeypat
     async def fake_connect_mcp_server(_config, _registry):
         calls.append("connect_mcp")
 
-    def fake_has_capability(_registry):
-        calls.append("check_capability")
-        return True
+    bootstrap_args: dict[str, object] = {}
 
-    bundle = object()
-    build_args: dict[str, object] = {}
-
-    def fake_build_dsim_runtime(**kwargs):
-        calls.append("build_runtime")
-        build_args.update(kwargs)
-        return bundle
-
-    def fake_register_dsim_tools(_registry, *, runtime):
-        calls.append("register_tools")
-        assert runtime is bundle
+    def fake_bootstrap_dsim_runtime(**kwargs):
+        calls.append("bootstrap_dsim")
+        bootstrap_args.update(kwargs)
+        return object()
 
     monkeypatch.setattr("cc.mcp.config.load_mcp_configs", fake_load_mcp_configs)
     monkeypatch.setattr("cc.mcp.client.connect_mcp_server", fake_connect_mcp_server)
-    monkeypatch.setattr("cc.dsim.registry.has_dsim_mcp_capability", fake_has_capability)
-    monkeypatch.setattr("cc.main.build_dsim_runtime", fake_build_dsim_runtime)
-    monkeypatch.setattr("cc.dsim.registry.register_dsim_tools", fake_register_dsim_tools)
+    monkeypatch.setattr("cc.dsim.bootstrap.bootstrap_dsim_runtime", fake_bootstrap_dsim_runtime)
 
     registry = object()
+    permission_ctx = object()
     await _connect_mcp_servers(
         "workspace",
         registry,
-        permission_ctx=object(),
+        permission_ctx=permission_ctx,
         session_id="test-session",
     )
 
-    assert calls == ["connect_mcp", "check_capability", "build_runtime", "register_tools"]
-    assert build_args["session_id"] == "test-session"
-    assert build_args["permission_ctx"] is not None
+    assert calls == ["connect_mcp", "bootstrap_dsim"]
+    assert bootstrap_args == {
+        "cwd": "workspace",
+        "registry": registry,
+        "permission_ctx": permission_ctx,
+        "session_id": "test-session",
+    }
 
 
 @pytest.mark.asyncio

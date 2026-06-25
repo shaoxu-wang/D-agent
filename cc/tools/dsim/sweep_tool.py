@@ -33,7 +33,12 @@ class RunParameterSweepTool(Tool):
                 content="RunParameterSweep supports at most 20 combinations without explicit confirmation.",
                 is_error=True,
             )
-        if self._workflow_service is None:
-            return ToolResult(content=f"Prepared serial DSim sweep with {len(combinations)} combinations.")
+        if self._workflow_service is None or not hasattr(self._workflow_service, "run_sweep"):
+            return ToolResult(content="DSim workflow service is required for RunParameterSweep.", is_error=True)
         result = await self._workflow_service.run_sweep(tool_input)
-        return ToolResult(content=str(result))
+        structured = result.model_dump() if hasattr(result, "model_dump") else result
+        project_id = getattr(result, "project_id", None) or tool_input.get("project_id") or "unknown-project"
+        return ToolResult(
+            content=f"DSim parameter sweep completed for {project_id}.",
+            metadata={"structured": structured},
+        )
