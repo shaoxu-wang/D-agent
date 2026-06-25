@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from cc.dsim.workflow_models import DsimWorkflowMode, DsimWorkflowRequest
 from cc.tools.base import Tool, ToolResult, ToolSchema
+from cc.tools.dsim.result_helpers import workflow_tool_result
 
 
 class RunDsimEngineeringWorkflowTool(Tool):
@@ -65,9 +66,9 @@ class RunDsimEngineeringWorkflowTool(Tool):
             )
 
         result = await self._workflow_service.run(request)
-        structured = result.model_dump() if hasattr(result, "model_dump") else result
         project_id = getattr(result, "project_id", None) or tool_input.get("project_id") or "unknown-project"
-        return ToolResult(
-            content=f"DSim workflow {request.mode.value} completed for {project_id}.",
-            metadata={"structured": structured},
+        return workflow_tool_result(
+            result,
+            success_content=f"DSim workflow {request.mode.value} completed for {project_id}.",
+            failure_prefix=f"DSim workflow {request.mode.value} for {project_id}",
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from cc.tools.base import Tool, ToolResult, ToolSchema
+from cc.tools.dsim.result_helpers import workflow_tool_result
 
 
 class CompareSimulationRunsTool(Tool):
@@ -33,10 +34,10 @@ class CompareSimulationRunsTool(Tool):
         if self._workflow_service is None or not hasattr(self._workflow_service, "compare_runs"):
             return ToolResult(content="DSim workflow service is required for CompareSimulationRuns.", is_error=True)
         result = await self._workflow_service.compare_runs(tool_input)
-        structured = result.model_dump() if hasattr(result, "model_dump") else result
         first = runs[0].get("run_id", "unknown-run")
         second = runs[1].get("run_id", "unknown-run")
-        return ToolResult(
-            content=f"DSim runs compared: {first} vs {second}.",
-            metadata={"structured": structured},
+        return workflow_tool_result(
+            result,
+            success_content=f"DSim runs compared: {first} vs {second}.",
+            failure_prefix=f"DSim run comparison {first} vs {second}",
         )

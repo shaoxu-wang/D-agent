@@ -26,6 +26,7 @@ class DsimRiskClassifier:
     })
     EXECUTION_AGENT_TOOLS = frozenset({
         "RunDsimEngineeringWorkflow",
+        "GenerateDsimReport",
         "DiagnoseSimulationFailure",
         "CompareSimulationRuns",
         "RunParameterSweep",

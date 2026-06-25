@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from cc.tools.base import Tool, ToolResult, ToolSchema
+from cc.tools.dsim.result_helpers import workflow_tool_result
 
 
 class DiagnoseSimulationFailureTool(Tool):
@@ -30,9 +31,9 @@ class DiagnoseSimulationFailureTool(Tool):
         if self._workflow_service is None or not hasattr(self._workflow_service, "diagnose_existing"):
             return ToolResult(content="DSim workflow service is required for DiagnoseSimulationFailure.", is_error=True)
         result = await self._workflow_service.diagnose_existing(tool_input)
-        structured = result.model_dump() if hasattr(result, "model_dump") else result
         run_id = getattr(result, "run_id", None) or tool_input.get("run_id") or "unknown-run"
-        return ToolResult(
-            content=f"DSim diagnosis completed for {run_id}.",
-            metadata={"structured": structured},
+        return workflow_tool_result(
+            result,
+            success_content=f"DSim diagnosis completed for {run_id}.",
+            failure_prefix=f"DSim diagnosis for {run_id}",
         )

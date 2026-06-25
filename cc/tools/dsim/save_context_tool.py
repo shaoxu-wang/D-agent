@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from cc.tools.base import Tool, ToolResult, ToolSchema
+from cc.tools.dsim.result_helpers import workflow_tool_result
 
 
 class SaveProjectContextTool(Tool):
@@ -35,9 +36,9 @@ class SaveProjectContextTool(Tool):
         if self._workflow_service is None or not hasattr(self._workflow_service, "save_project_context"):
             return ToolResult(content="DSim workflow service is required for SaveProjectContext.", is_error=True)
         result = await self._workflow_service.save_project_context(tool_input)
-        structured = result.model_dump() if hasattr(result, "model_dump") else result
         project_id = getattr(result, "project_id", None) or tool_input.get("project_id") or "unknown-project"
-        return ToolResult(
-            content=f"DSim project context saved for {project_id}.",
-            metadata={"structured": structured},
+        return workflow_tool_result(
+            result,
+            success_content=f"DSim project context saved for {project_id}.",
+            failure_prefix=f"DSim project context save for {project_id}",
         )

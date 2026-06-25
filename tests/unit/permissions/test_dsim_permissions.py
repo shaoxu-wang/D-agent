@@ -33,6 +33,7 @@ def test_dsim_risk_classifier_uses_real_agent_tool_names():
     assert classifier.is_dsim_tool("DsimWorkflow") is False
     assert classifier.classify("RunDsimEngineeringWorkflow", {"mode": "single_run"}) == "ask"
     assert classifier.classify("RunParameterSweep", {"combinations": [{"value": 1}]}) == "ask"
+    assert classifier.classify("GenerateDsimReport", {"project_id": "project-1"}) == "ask"
     assert classifier.classify("SaveProjectContext", {"kind": "note"}) == "allow"
 
 
