@@ -49,6 +49,15 @@ class RunDsimEngineeringWorkflowTool(Tool):
                     "status": {"type": "string"},
                     "error": {"type": "object"},
                     "confirmed": {"type": "boolean"},
+                    "use_project_memory": {
+                        "type": "boolean",
+                        "description": "When true, build a project memory context for this workflow.",
+                    },
+                    "memory_usage_mode": {
+                        "type": "string",
+                        "enum": ["suggest_only", "apply_prefill"],
+                        "description": "Defaults to suggest_only. apply_prefill requires clear user intent.",
+                    },
                 },
             },
         )

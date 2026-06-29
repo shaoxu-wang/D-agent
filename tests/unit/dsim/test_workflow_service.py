@@ -167,8 +167,10 @@ async def test_workflow_service_saves_confirmed_context_and_memory_candidate() -
     result = await service.save_project_context(
         {
             "project_id": "project-1",
-            "kind": "conclusion",
+            "kind": "engineering_conclusion",
             "content": "Use the local mock backend.",
+            "applies_to": ["single_run"],
+            "priority": 2,
             "confirmed": True,
         }
     )
@@ -179,6 +181,10 @@ async def test_workflow_service_saves_confirmed_context_and_memory_candidate() -
     assert project is not None
     assert project.workflow_summaries
     assert project.memory_candidates
+    assert project.memory_candidates[0]["kind"] == "engineering_conclusion"
+    assert project.memory_candidates[0]["content"] == "Use the local mock backend."
+    assert project.memory_candidates[0]["applies_to"] == ["single_run"]
+    assert project.memory_candidates[0]["priority"] == 2
     shutil.rmtree(workspace)
 
 
@@ -193,15 +199,20 @@ async def test_workflow_service_uses_memory_sink_for_confirmed_candidates() -> N
     result = await service.save_project_context(
         {
             "project_id": "project-memory",
-            "kind": "preference",
+            "kind": "user_preference",
             "content": "Keep reports local.",
+            "applies_to": ["report_existing"],
             "confirmed": True,
         }
     )
 
-    assert result.memory_candidates[0].kind == "preference"
+    assert result.memory_candidates[0].kind == "user_preference"
+    assert result.memory_candidates[0].content == "Keep reports local."
+    assert result.memory_candidates[0].applies_to == ["report_existing"]
     assert memory_sink.calls[0]["context"] == {"project_id": "project-memory"}
-    assert memory_sink.calls[0]["candidate"]["kind"] == "preference"
+    assert memory_sink.calls[0]["candidate"]["kind"] == "user_preference"
+    assert memory_sink.calls[0]["candidate"]["content"] == "Keep reports local."
+    assert memory_sink.calls[0]["candidate"]["applies_to"] == ["report_existing"]
     shutil.rmtree(workspace)
 
 
@@ -227,6 +238,39 @@ async def test_workflow_service_generates_report_and_artifact() -> None:
     assert project.artifact_refs
     assert project.workflow_summaries
     assert result.artifacts[0].path.endswith(".md")
+    shutil.rmtree(workspace)
+
+
+@pytest.mark.asyncio
+async def test_workflow_service_report_includes_persisted_diagnosis_summary() -> None:
+    workspace = Path(".test_dsim_workflow_service")
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    service, state_manager = _build_service(workspace)
+    state_manager.append_run_summary(
+        project_id="project-report-diagnosis",
+        summary={"run_id": "run-1", "status": "failed"},
+    )
+    state_manager.append_workflow_summary(
+        project_id="project-report-diagnosis",
+        summary={
+            "mode": DsimWorkflowMode.diagnose_existing.value,
+            "run_id": "run-1",
+            "diagnosis": {
+                "category": "solver_convergence",
+                "severity": "high",
+                "confidence": 0.85,
+                "next_actions": ["Review solver tolerance."],
+            },
+        },
+    )
+
+    result = await service.generate_report({"project_id": "project-report-diagnosis"})
+
+    markdown = Path(result.artifacts[0].path).read_text(encoding="utf-8")
+    assert "## Diagnosis" in markdown
+    assert "solver_convergence" in markdown
+    assert "Review solver tolerance." in markdown
     shutil.rmtree(workspace)
 
 
@@ -380,6 +424,153 @@ async def test_workflow_service_single_run_reads_curve_summary() -> None:
 
 
 @pytest.mark.asyncio
+async def test_demo_loop_single_run_then_report_records_state_and_artifact() -> None:
+    workspace = Path(".test_dsim_workflow_service")
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    invoker = RecordingInvoker(
+        [
+            _structured_tool_result(tool_name="UpdateDsimParameters", data={"parameters": {"alpha": 1}}),
+            _structured_tool_result(
+                tool_name="RunDsimSimulation",
+                data={"status": "completed", "run_id": "run-demo"},
+                runtime={"run_id": "run-demo"},
+            ),
+            _structured_tool_result(
+                tool_name="ReadDsimCurves",
+                data={"run_id": "run-demo", "metrics": {"peak": 4.2, "final_value": 1.7}},
+                runtime={"run_id": "run-demo"},
+            ),
+        ]
+    )
+    service, state_manager = _build_service_with_invoker(workspace, invoker)
+
+    run_result = await service.run_single(
+        {
+            "project_id": "project-demo",
+            "handle_id": "handle-demo",
+            "parameters": [{"name": "alpha", "value": 1}],
+        }
+    )
+    report_result = await service.generate_report({"project_id": "project-demo"})
+
+    project = state_manager.get_project("project-demo")
+    assert run_result.summary["run_id"] == "run-demo"
+    assert run_result.summary["curve_summary"]["metrics"]["peak"] == 4.2
+    assert report_result.summary["run_count"] == 1
+    assert report_result.artifacts
+    assert project is not None
+    assert [item["run_id"] for item in project.run_summaries] == ["run-demo"]
+    assert [item["run_id"] for item in project.curve_summaries] == ["run-demo"]
+    assert len(project.artifact_refs) == 1
+    assert project.workflow_summaries[-1]["artifact_id"] == report_result.artifacts[0].artifact_id
+    assert Path(report_result.artifacts[0].path).read_text(encoding="utf-8")
+    shutil.rmtree(workspace)
+
+
+@pytest.mark.asyncio
+async def test_workflow_service_single_run_applies_confirmed_memory_prefill() -> None:
+    workspace = Path(".test_dsim_workflow_service")
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    invoker = RecordingInvoker(
+        [
+            _structured_tool_result(tool_name="ConfigureDsimRun", data={"configured": True}),
+            _structured_tool_result(
+                tool_name="RunDsimSimulation",
+                data={"status": "completed", "run_id": "run-memory"},
+            ),
+            _structured_tool_result(
+                tool_name="ReadDsimCurves",
+                data={"run_id": "run-memory", "metrics": {"peak": 2.5}},
+            ),
+        ]
+    )
+    service, state_manager = _build_service_with_invoker(workspace, invoker)
+    state_manager.record_memory_candidate(
+        project_id="project-memory-run",
+        candidate={
+            "memory_id": "m-profile",
+            "kind": "operating_profile",
+            "content": "Use tolerance 1e-6 and max iterations 200.",
+            "applies_to": ["single_run"],
+            "confirmed": True,
+            "priority": 5,
+        },
+    )
+
+    result = await service.run_single(
+        {
+            "project_id": "project-memory-run",
+            "handle_id": "handle-memory",
+            "use_project_memory": True,
+            "memory_usage_mode": "apply_prefill",
+        }
+    )
+
+    assert invoker.calls[0] == (
+        "mcp__dsim__ConfigureDsimRun",
+        {"handle_id": "handle-memory", "config": {"tolerance": 1e-06, "max_iterations": 200}},
+    )
+    assert result.summary["run_plan"]["apply_mode"] == "apply_prefill"
+    assert result.summary["run_plan"]["memory_hints_used"] == ["m-profile"]
+    shutil.rmtree(workspace)
+
+
+@pytest.mark.asyncio
+async def test_memory_prefill_does_not_bypass_configure_permission_failure() -> None:
+    workspace = Path(".test_dsim_workflow_service")
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    invoker = RecordingInvoker(
+        [
+            ToolResult(
+                content="Denied by permission policy",
+                is_error=True,
+                metadata={
+                    "structured": {
+                        "ok": False,
+                        "service": "dsim",
+                        "tool": "ConfigureDsimRun",
+                        "data": {},
+                        "runtime": {},
+                        "state_updates": [],
+                        "artifacts": [],
+                        "error": {"code": "PERMISSION_DENIED", "message": "Denied by permission policy"},
+                    }
+                },
+            )
+        ]
+    )
+    service, state_manager = _build_service_with_invoker(workspace, invoker)
+    state_manager.record_memory_candidate(
+        project_id="project-memory-denied",
+        candidate={
+            "memory_id": "m-profile",
+            "kind": "operating_profile",
+            "content": "Use tolerance 1e-6 and max iterations 200.",
+            "applies_to": ["single_run"],
+            "confirmed": True,
+            "priority": 5,
+        },
+    )
+
+    result = await service.run_single(
+        {
+            "project_id": "project-memory-denied",
+            "handle_id": "handle-memory",
+            "use_project_memory": True,
+            "memory_usage_mode": "apply_prefill",
+        }
+    )
+
+    assert result.summary["ok"] is False
+    assert result.summary["error"]["code"] == "PERMISSION_DENIED"
+    assert [call[0] for call in invoker.calls] == ["mcp__dsim__ConfigureDsimRun"]
+    shutil.rmtree(workspace)
+
+
+@pytest.mark.asyncio
 async def test_workflow_service_compare_runs_reads_stored_summaries() -> None:
     workspace = Path(".test_dsim_workflow_service")
     if workspace.exists():
@@ -426,7 +617,13 @@ async def test_workflow_service_diagnose_uses_stored_status_and_curve_summary() 
 
     assert result.summary["status"] == "failed"
     assert result.summary["error_code"] == "SOLVER_FAILED"
+    assert result.summary["diagnosis"]["category"] == "solver_convergence"
+    assert result.summary["diagnosis"]["severity"] == "high"
+    assert result.summary["diagnosis"]["next_actions"]
     assert result.summary["curve_summary"]["metrics"]["peak"] == 5.0
+    project = state_manager.get_project("project-8")
+    assert project is not None
+    assert project.workflow_summaries[-1]["diagnosis"]["category"] == "solver_convergence"
     shutil.rmtree(workspace)
 
 

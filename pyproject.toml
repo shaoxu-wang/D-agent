@@ -41,6 +41,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "e2e: end-to-end tests requiring real API key",
+    "llm: opt-in LLM behavior tests requiring API credentials",
 ]
 
 [tool.ruff]

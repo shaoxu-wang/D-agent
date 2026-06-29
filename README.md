@@ -55,6 +55,20 @@ cc/
 tests/                  498 个测试用例
 ```
 
+## DSim Agent Showcase
+
+本仓库还实现了一个面向工业仿真场景的本地垂直 Agent：DSim Agent。它复用当前 Agent Runtime 的工具注册、MCP 接入、权限门控、状态存储、artifact 和记忆能力，在 `cc/dsim/` 与 `cc/tools/dsim/` 上增加 DSim 领域 workflow。
+
+核心能力：
+
+- 多个 DSim workflow tool：单次仿真、失败诊断、报告生成、参数 sweep、项目上下文保存。
+- MCP 结果观测：`DsimToolInvoker` 将 DSim MCP 工具结果交给 observer，写入项目状态和 audit。
+- 记忆影响运行：确认后的项目记忆构建 `MemoryContext`，再生成轻量 `RunPlan`；`apply_prefill` 可预填配置，但最终工具调用仍经过权限链路。
+- 失败诊断闭环：根据 run summary、error code、curve summary 生成确定性的 category、severity、confidence、evidence、next action。
+- 展示与评测：提供稳定 demo 闭环测试、报告 artifact、LLM 行为评测契约和 opt-in live eval 脚本。
+
+相关文档见 [`docs/showcase/dsim_agent_showcase.md`](docs/showcase/dsim_agent_showcase.md)。
+
 ### 核心数据流
 
 ```

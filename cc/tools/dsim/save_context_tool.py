@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from cc.dsim.memory_kinds import STAGE2C_MEMORY_KINDS
 from cc.tools.base import Tool, ToolResult, ToolSchema
 from cc.tools.dsim.result_helpers import workflow_tool_result
 
@@ -24,13 +25,41 @@ class SaveProjectContextTool(Tool):
                 "Save confirmed DSim project context and memory candidates. "
                 "For multi-step work prefer RunDsimEngineeringWorkflow."
             ),
-            input_schema={"type": "object"},
+            input_schema={
+                "type": "object",
+                "required": ["project_id", "kind", "content"],
+                "properties": {
+                    "project_id": {"type": "string"},
+                    "project_path": {"type": "string"},
+                    "kind": {
+                        "type": "string",
+                        "enum": sorted(STAGE2C_MEMORY_KINDS),
+                        "description": "Stage 2C DSim project memory category.",
+                    },
+                    "content": {"type": "string"},
+                    "applies_to": {"type": "array", "items": {"type": "string"}},
+                    "evidence_refs": {"type": "array", "items": {"type": "object"}},
+                    "confirmed": {"type": "boolean"},
+                    "priority": {"type": "integer"},
+                    "interpretive": {"type": "boolean"},
+                },
+            },
         )
 
     async def execute(self, tool_input: dict[str, Any]) -> ToolResult:
-        if tool_input.get("kind") in {"conclusion", "preference", "recommendation"} and not tool_input.get("confirmed"):
+        kind = str(tool_input.get("kind", "project_fact"))
+        if kind not in STAGE2C_MEMORY_KINDS:
             return ToolResult(
-                content="Confirmation is required before saving interpretive DSim context.",
+                content=(
+                    f"Unsupported DSim memory kind: {kind}. "
+                    f"Supported kinds: {', '.join(sorted(STAGE2C_MEMORY_KINDS))}."
+                ),
+                is_error=True,
+            )
+        requires_confirmation = kind != "project_fact" or bool(tool_input.get("interpretive"))
+        if requires_confirmation and not tool_input.get("confirmed"):
+            return ToolResult(
+                content="Confirmation is required before saving interpretive or preference-like DSim project memory.",
                 is_error=True,
             )
         if self._workflow_service is None or not hasattr(self._workflow_service, "save_project_context"):

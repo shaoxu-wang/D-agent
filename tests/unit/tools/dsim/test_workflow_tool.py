@@ -1,5 +1,7 @@
 import pytest
+from pydantic import ValidationError
 
+from cc.dsim.workflow_models import DsimWorkflowRequest
 from cc.tools.dsim.workflow_tool import RunDsimEngineeringWorkflowTool
 
 
@@ -29,6 +31,8 @@ def test_workflow_tool_schema_requires_explicit_mode() -> None:
     assert "combinations" in schema.input_schema["properties"]
     assert "runs" in schema.input_schema["properties"]
     assert "timeout_seconds" in schema.input_schema["properties"]
+    assert schema.input_schema["properties"]["use_project_memory"]["type"] == "boolean"
+    assert schema.input_schema["properties"]["memory_usage_mode"]["enum"] == ["suggest_only", "apply_prefill"]
 
 
 @pytest.mark.asyncio
@@ -86,6 +90,8 @@ async def test_workflow_tool_preserves_workflow_payload_fields() -> None:
             "timeout_seconds": 30,
             "status": "failed",
             "error": {"code": "SOLVER_FAILED"},
+            "use_project_memory": True,
+            "memory_usage_mode": "apply_prefill",
         }
     )
 
@@ -96,3 +102,10 @@ async def test_workflow_tool_preserves_workflow_payload_fields() -> None:
     assert request.timeout_seconds == 30
     assert request.status == "failed"
     assert request.error == {"code": "SOLVER_FAILED"}
+    assert request.use_project_memory is True
+    assert request.memory_usage_mode == "apply_prefill"
+
+
+def test_workflow_request_rejects_unsupported_memory_usage_mode() -> None:
+    with pytest.raises(ValidationError):
+        DsimWorkflowRequest(mode="single_run", memory_usage_mode="auto_apply")

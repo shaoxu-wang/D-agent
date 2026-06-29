@@ -126,6 +126,10 @@ class DsimProjectStateManager:
         project.workflow_summaries.append(summary)
         self._write_project(project)
 
+    def list_workflow_summaries(self, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(project_id)
+        return [] if project is None else list(project.workflow_summaries)
+
     def append_sweep_summary(self, *, project_id: str, summary: dict[str, Any]) -> None:
         project = self._load_or_create_project(project_id)
         project.sweep_summaries.append(summary)
@@ -140,6 +144,12 @@ class DsimProjectStateManager:
         project = self._load_or_create_project(project_id)
         project.memory_candidates.append(candidate)
         self._write_project(project)
+
+    def list_confirmed_memory_candidates(self, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(project_id)
+        if project is None:
+            return []
+        return [dict(candidate) for candidate in project.memory_candidates if candidate.get("confirmed") is True]
 
     def _merge_project_index(self, project_id: str) -> None:
         index_path = self.paths.root / "project_state.json"

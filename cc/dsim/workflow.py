@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cc.dsim.diagnosis import DsimDiagnosisProcessor
+from cc.dsim.memory_context import MemoryContextBuilder
+from cc.dsim.memory_kinds import STAGE2C_MEMORY_KINDS
+from cc.dsim.run_plan import RunPlanApplyMode, RunPlanBuilder
 from cc.dsim.workflow_models import (
     DsimArtifactRef,
     DsimMemoryCandidate,
@@ -86,21 +90,38 @@ class DsimWorkflowService:
         if project_path := tool_input.get("project_path"):
             self._runtime.state_manager.upsert_project(project_id=project_id, project_path=str(project_path))
 
+        kind = str(tool_input.get("kind", "project_fact"))
+        confirmed = bool(tool_input.get("confirmed"))
+        if kind not in STAGE2C_MEMORY_KINDS:
+            return workflow_error_result(
+                mode=DsimWorkflowMode.inspect_only,
+                project_id=project_id,
+                summary={
+                    "saved": False,
+                    "error": f"Unsupported DSim memory kind: {kind}",
+                    "supported_kinds": sorted(STAGE2C_MEMORY_KINDS),
+                },
+                step_name="save_project_context",
+            )
+
         summary = {
             "saved": True,
             "mode": DsimWorkflowMode.inspect_only.value,
-            "kind": tool_input.get("kind", "note"),
+            "kind": kind,
             "content": tool_input.get("content", ""),
-            "confirmed": bool(tool_input.get("confirmed")),
+            "confirmed": confirmed,
         }
         self._runtime.state_manager.append_workflow_summary(project_id=project_id, summary=summary)
 
         memory_candidates: list[DsimMemoryCandidate] = []
-        if summary["kind"] in {"conclusion", "preference", "recommendation"} and summary["confirmed"]:
+        if confirmed:
             candidate = DsimMemoryCandidate(
-                kind=str(summary["kind"]),
+                kind=kind,
+                content=str(tool_input.get("content", "")),
+                applies_to=list(tool_input.get("applies_to", [])),
                 evidence_refs=[{"source": "SaveProjectContext", "project_id": project_id}],
                 confirmed=True,
+                priority=int(tool_input.get("priority") or 0),
             )
             memory_candidates.append(candidate)
             candidate_payload = candidate.model_dump()
@@ -150,11 +171,28 @@ class DsimWorkflowService:
                 step_name="run_single",
             )
 
-        if config := tool_input.get("config"):
+        run_plan = None
+        if project_id and tool_input.get("use_project_memory"):
+            memory_context = MemoryContextBuilder(reader=self._runtime.state_manager).build(
+                project_id=project_id,
+                applies_to=DsimWorkflowMode.single_run.value,
+            )
+            run_plan = RunPlanBuilder().build(
+                mode=DsimWorkflowMode.single_run.value,
+                memory_context=memory_context,
+                apply_mode=self._memory_usage_mode(tool_input),
+            )
+            if run_plan.apply_mode == "apply_prefill":
+                merged_config = {**run_plan.config_prefill, **dict(tool_input.get("config") or {})}
+                merged_parameters = [*run_plan.parameter_prefill, *list(tool_input.get("parameters", []))]
+                tool_input = {**tool_input, "config": merged_config, "parameters": merged_parameters}
+
+        config_input = tool_input.get("config")
+        if isinstance(config_input, dict) and config_input:
             config_result = await configure_run(
                 runtime=self._runtime,
                 handle_id=handle_id,
-                config=config,
+                config=config_input,
                 steps=steps,
             )
             if config_result.is_error:
@@ -200,6 +238,8 @@ class DsimWorkflowService:
             "status": payload.get("data", {}).get("status"),
             "error": payload.get("error"),
         }
+        if run_plan is not None:
+            summary["run_plan"] = run_plan.compact()
         if not run_result.is_error:
             await read_curve_summary(
                 runtime=self._runtime,
@@ -247,6 +287,14 @@ class DsimWorkflowService:
         }
         if curve_summary:
             summary["curve_summary"] = curve_summary
+        status_value = summary.get("status")
+        diagnosis = DsimDiagnosisProcessor().diagnose(
+            run_id=run_id,
+            status=str(status_value) if status_value is not None else None,
+            error=error if isinstance(error, dict) else {"message": str(error)},
+            curve_summary=curve_summary,
+        )
+        summary["diagnosis"] = diagnosis.model_dump()
         if project_id:
             self._runtime.state_manager.append_workflow_summary(project_id=project_id, summary=summary)
 
@@ -268,6 +316,7 @@ class DsimWorkflowService:
             )
 
         runs = list(tool_input.get("runs", [])) or self._runtime.state_manager.list_run_summaries(project_id)
+        runs = self._merge_report_workflow_context(project_id=project_id, runs=runs)
         markdown = render_report_markdown(project_id=project_id, runs=runs)
         artifact_ref = DsimArtifactRef(
             **self._runtime.artifact_store.write_report(project_id=project_id, markdown=markdown)
@@ -403,3 +452,29 @@ class DsimWorkflowService:
         if context is None:
             return {}
         return context.model_dump()
+
+    def _merge_report_workflow_context(self, *, project_id: str, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not hasattr(self._runtime.state_manager, "list_workflow_summaries"):
+            return runs
+        by_run_id: dict[str, dict[str, Any]] = {}
+        for summary in self._runtime.state_manager.list_workflow_summaries(project_id):
+            run_id = summary.get("run_id")
+            if run_id is None:
+                continue
+            context = by_run_id.setdefault(str(run_id), {})
+            for key in ("diagnosis", "run_plan"):
+                if key in summary:
+                    context[key] = summary[key]
+
+        merged: list[dict[str, Any]] = []
+        for run in runs:
+            run_id = run.get("run_id")
+            if run_id is None:
+                merged.append(run)
+                continue
+            merged.append({**by_run_id.get(str(run_id), {}), **run})
+        return merged
+
+    def _memory_usage_mode(self, tool_input: dict[str, Any]) -> RunPlanApplyMode:
+        mode = str(tool_input.get("memory_usage_mode") or "suggest_only")
+        return "apply_prefill" if mode == "apply_prefill" else "suggest_only"

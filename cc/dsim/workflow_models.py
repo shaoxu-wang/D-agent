@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,9 +26,15 @@ class DsimArtifactRef(BaseModel):
 
 
 class DsimMemoryCandidate(BaseModel):
+    memory_id: str = ""
     kind: str
+    content: str = ""
+    applies_to: list[str] = Field(default_factory=list)
     evidence_refs: list[dict[str, Any]] = Field(default_factory=list)
     confirmed: bool = False
+    priority: int = 0
+    created_at: str = ""
+    long_term_memory_status: str = "deferred"
 
 
 class DsimWorkflowRequest(BaseModel):
@@ -45,6 +51,8 @@ class DsimWorkflowRequest(BaseModel):
     status: str | None = None
     error: dict[str, Any] | None = None
     confirmed: bool = False
+    use_project_memory: bool = False
+    memory_usage_mode: Literal["suggest_only", "apply_prefill"] = "suggest_only"
 
 
 class DsimWorkflowStep(BaseModel):

@@ -38,11 +38,34 @@ def render_report_markdown(*, project_id: str, runs: list[dict[str, Any]]) -> st
     if not runs:
         lines.append("No run summaries are available.")
     else:
-        lines.extend(["## Runs", ""])
+        lines.extend(["## Run Summary", ""])
         for run in runs:
             run_id = run.get("run_id", "unknown-run")
             status = run.get("status", "unknown")
             lines.append(f"- {run_id}: {status}")
+        diagnosis_runs = [run for run in runs if isinstance(run.get("diagnosis"), dict)]
+        if diagnosis_runs:
+            lines.extend(["", "## Diagnosis", ""])
+            for run in diagnosis_runs:
+                diagnosis = run["diagnosis"]
+                run_id = run.get("run_id", "unknown-run")
+                lines.append(
+                    "- "
+                    f"{run_id}: {diagnosis.get('category', 'unknown')} "
+                    f"({diagnosis.get('severity', 'unknown')}, confidence={diagnosis.get('confidence', 'unknown')})"
+                )
+                for action in diagnosis.get("next_actions", []):
+                    lines.append(f"  - Next action: {action}")
+        planned_runs = [run for run in runs if isinstance(run.get("run_plan"), dict)]
+        if planned_runs:
+            lines.extend(["", "## Memory And Run Plan", ""])
+            for run in planned_runs:
+                run_plan = run["run_plan"]
+                run_id = run.get("run_id", "unknown-run")
+                hints = ", ".join(str(item) for item in run_plan.get("memory_hints_used", [])) or "none"
+                lines.append(f"- {run_id}: {run_plan.get('apply_mode', 'suggest_only')} | memory hints: {hints}")
+                for warning in run_plan.get("warnings", []):
+                    lines.append(f"  - Warning: {warning}")
     lines.append("")
     return "\n".join(lines)
 

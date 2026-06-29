@@ -71,7 +71,11 @@ def build_dsim_runtime(
             input_summary=str(tool_input)[:200],
         )
 
-    invoker = DsimToolInvoker(registry=registry, permission_checker=_check if permission_ctx is not None else None)
+    invoker = DsimToolInvoker(
+        registry=registry,
+        observer=observer,
+        permission_checker=_check if permission_ctx is not None else None,
+    )
     artifact_store = DsimArtifactStore(workspace=workspace)
     memory_sink = DeferredMemorySink(state_manager=state_manager)
     bundle = DsimRuntimeBundle(
